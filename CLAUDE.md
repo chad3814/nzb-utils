@@ -60,9 +60,10 @@ motivated the rewrite. Each needs a test that would fail against the original.
   `props.part` is `undefined`. The original does `parseInt(props!.part.end)` and
   throws on every single-segment file — i.e. on exactly the `.nfo` and `.jpg` you
   want for a cheap preview.
-- **Never infer segment size from segment 1 and multiply.** That is wrong for
-  variable-article-size posts and silently returns bytes from wrong offsets.
-  `SegmentGeometry.uniform` must be proven.
+- **Never infer segment size from segment 1 and multiply _and leave it at that_.**
+  Inferring is fine and cheap; the bug is not checking. `@chad3814/nzb` predicts
+  from segment 1, then verifies each article's `=ypart` range before copying any of
+  its bytes, and throws `NzbGeometryError` on a mismatch.
 - **Dot-unstuffing must happen in the transport.** yEnc decoders do not do it;
   `@thaunknown/yencode` calls its decoder with `stripDots = false`.
 - **CRC verification is ours.** `fromPost` never compares `pcrc32`; nothing in
@@ -92,6 +93,14 @@ motivated the rewrite. Each needs a test that would fail against the original.
   `util.inspect({ showHidden: true })` alike — all three were checked. A test in
   `@chad3814/nntp` fails on any `this.x = credentials` assignment in the package
   instead.
+
+- **Segment geometry is predicted, then verified (settled 2026-08-05).** The
+  alternative — proving uniformity up front — means fetching every article's header,
+  which is the whole file. The common case is uniform, so `@chad3814/nzb` predicts
+  from segment 1 and checks each article against the prediction as it arrives. A
+  failed prediction throws rather than silently switching to sequential measurement,
+  because turning a 4 MiB read into a multi-gigabyte one unasked is the same class of
+  surprise as `slice(0, 0)` downloading everything.
 
 Still open:
 

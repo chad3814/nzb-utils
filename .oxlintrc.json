@@ -39,7 +39,11 @@
         // A `describe` block is a suite, not a function anyone has to read as
         // one. Splitting suites to satisfy a line budget makes tests harder to
         // find, not easier.
-        "max-lines-per-function": "off"
+        "max-lines-per-function": "off",
+        // A test is a script: it awaits one step, asserts, then awaits the
+        // next. Hoisting those into Promise.all to satisfy the rule would make
+        // a failure report a rejected batch instead of the step that broke.
+        "no-await-in-loop": "off"
       }
     }
   ]

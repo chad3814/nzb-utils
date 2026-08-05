@@ -35,12 +35,16 @@ export interface ArticleSource {
 /**
  * Decoded-byte geometry of a file's segments.
  *
- * Do not assume uniformity from a single article. `@thaunknown/yencode`-based
- * implementations commonly read `=ypart end=` from segment 1 and apply it to
- * every segment; that is wrong for variable-article-size posts and silently
- * returns bytes from the wrong offsets. Where per-segment sizes are not known,
- * {@link SegmentGeometry.uniform} must be `false` and offsets must be resolved
- * by fetching, not by multiplication.
+ * An NZB carries no decoded sizes, so this is *predicted* from segment 1 and
+ * the declared file size, then *verified* against each article's own `=ypart`
+ * header as it is fetched. Reading segment 1 and multiplying is what
+ * `@thaunknown/yencode`-based implementations do; the difference here is the
+ * second half, without which a variable-article-size post silently returns
+ * bytes from the wrong offsets.
+ *
+ * A prediction is therefore never load-bearing on its own. Nothing in this
+ * package copies bytes out of an article that has not been confirmed to hold
+ * the range the geometry claimed for it.
  */
 export interface SegmentGeometry {
   /** Decoded size of every segment except possibly the last. */
@@ -50,7 +54,15 @@ export interface SegmentGeometry {
   /** Total decoded size of the file, from the yEnc `=ybegin size=` header. */
   readonly totalSize: number;
   readonly segmentCount: number;
-  /** False when per-segment sizes have not been proven equal. */
+  /**
+   * Whether segment offsets can be computed arithmetically at all.
+   *
+   * False when the declared file size and segment 1's length cannot both be
+   * right about a uniformly-segmented post — detectable from the probe alone.
+   * When false, {@link SegmentGeometry.segmentSize} and
+   * {@link SegmentGeometry.lastSegmentSize} are the rejected prediction, kept
+   * for diagnostics, and must not be used to locate bytes.
+   */
   readonly uniform: boolean;
 }
 

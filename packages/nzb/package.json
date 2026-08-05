@@ -43,6 +43,7 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@chad3814/nzb-parser": "0.0.0"
+    "@chad3814/nzb-parser": "0.0.0",
+    "@chad3814/yenc": "0.0.0"
   }
 }

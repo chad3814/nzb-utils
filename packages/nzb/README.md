@@ -3,10 +3,8 @@
 W3C `File`-like access to the contents of an NZB. Slicing a handle downloads only the
 articles that overlap the requested range.
 
-**Status: partially implemented.** `src/range.ts` — the slice and range
-arithmetic the audit was about — is complete and tested. `NzbFileHandle` itself,
-which joins that arithmetic to an `ArticleSource` and actually fetches, has not
-landed yet.
+**Status: implemented, not yet published.** Depends on `@chad3814/nzb-parser` and
+`@chad3814/yenc`, and on nothing else.
 
 ## Why this shape
 
@@ -14,9 +12,11 @@ An NZB maps byte ranges to Usenet articles. Once you model a file as a `File`, t
 useful operations fall out for free:
 
 ```ts
-const head = file.slice(0, 4 * 1024 * 1024); // one 4 MiB article
-const tail = file.slice(-4 * 1024 * 1024); // the last one or two
-await head.arrayBuffer(); // fetches exactly those segments, nothing else
+import { openNzbFile } from '@chad3814/nzb';
+
+const file = await openNzbFile(nzb.files[0], source); // one article
+const head = file.slice(0, 4 * 1024 * 1024); // no I/O
+await head.arrayBuffer(); // fetches exactly the overlapping segments
 ```
 
 For a 7.91 GiB / 1971-article release, a preview costs one article. There is no need
@@ -37,6 +37,39 @@ An authenticated `@chad3814/nntp` client satisfies it. So does a pool, a cache, 
 test fixture. Authentication belongs to the transport and stays there — this package
 has no parameter that accepts a username or password.
 
+## Geometry: predict, then verify
+
+An NZB carries no decoded sizes. It says how many bytes each _article_ occupies on
+the wire, which is 2–4% larger than its payload and varies with escape density. The
+only authoritative statement of where a segment sits is the `=ypart begin=/end=`
+line inside the article itself — and reading all of them means downloading the file.
+
+`nzb-file@1.1.18` resolves this by reading `=ypart end=` from segment 1 and
+multiplying. That is right for most posts and silently wrong for the rest: a
+variable-article-size post returns bytes from the wrong offsets, with no error at
+any layer.
+
+This package takes the same cheap prediction and then checks it:
+
+1. `openNzbFile` fetches segment 1 alone. It yields the authoritative filename and
+   total size, and predicts that every segment is that length with a shorter tail.
+   A prediction that cannot be right — a tail that is empty, negative, or longer
+   than a full segment — sets `geometry.uniform` to `false` immediately, and
+   `resolveRange` then refuses to compute offsets at all.
+2. Every article is checked against that prediction as it arrives, before a single
+   byte of it is copied out: its `=ypart` range must be exactly the range the
+   geometry claimed, and its `=ybegin name=` and `size=` must match segment 1's.
+   A mismatch throws `NzbGeometryError`.
+
+So a uniform post costs one probe article, and a non-uniform one fails loudly at the
+first article that proves it. What does not happen is the third option, which is the
+one the reference implementation picks.
+
+Recovering from a failed prediction would mean measuring — fetching articles from
+the start until the requested range is covered. That is not done automatically,
+because turning a 4 MiB read into a multi-gigabyte one without being asked is the
+same class of surprise as `slice(0, 0)` downloading the whole file.
+
 ## Slicing invariants
 
 These are contract, enforced by tests. Each one is a bug in `nzb-file@1.1.18`, which
@@ -44,35 +77,62 @@ this package replaces:
 
 - **`slice(0, 0)` yields an empty handle.** `nzb-file` short-circuits on `end === 0`
   and returns a full-size clone, so `slice(0, 0).arrayBuffer()` downloads the entire
-  file — 1868 articles and 7.9 GiB for a typical 2160p release. Verified against a
-  real NZB's geometry.
+  file — 1868 articles and 7.9 GiB for a typical 2160p release.
 - **Nested slices clamp to their parent's window,** not to the original file's size.
+  Bounds are resolved against the handle they are called on, then translated into
+  the file's coordinates, so a slice can only ever shrink.
 - **Negative offsets are relative to this handle,** not to the original file.
 - **`slice()` performs no I/O.** Only `arrayBuffer`, `bytes`, `text`, `stream`, and
   async iteration fetch.
-- **Segment uniformity is never assumed.** `nzb-file` reads `=ypart end=` from
-  segment 1 and multiplies, which silently returns wrong bytes for
-  variable-article-size posts. `SegmentGeometry.uniform` must be proven, not guessed.
-- **Single-part files must work.** Single-part yEnc posts have no `=ypart` line at
-  all, so `props.part` is `undefined`. `nzb-file`'s `fromNZB()` does
+- **Single-part files work.** Single-part yEnc posts have no `=ypart` line at all,
+  so `props.part` is `undefined`. `nzb-file`'s `fromNZB()` does
   `parseInt(props!.part.end)` and throws a `TypeError` on every single-segment file —
   which is exactly the `.nfo` and `.jpg` you would want for a cheap preview.
 
 ## Integrity
 
 yEnc's `=yend pcrc32=` covers each individual article, so a partial fetch can be
-verified without touching PAR2 at all. Note that `@thaunknown/yencode`'s `fromPost`
-does **not** check it — nothing in that library compares CRCs. Verification is this
-package's job, and PAR2-level verification will come from `@chad3814/par2`.
+verified without touching PAR2 at all. Checking it is the default here, because it
+costs nothing next to the fetch it accompanies; `{ verify: false }` opts out for
+posts with trailers known to be wrong. Note that `@thaunknown/yencode`'s `fromPost`
+does **not** check it — nothing in that library compares CRCs, so a "verified"
+download verified nothing. PAR2-level verification will come from `@chad3814/par2`.
 
-## Open decisions
+## Layout
 
-- **yEnc implementation.** `@thaunknown/yencode` is SIMD-accelerated with a
-  verifiable upstream (`animetosho/node-yencode`), but it is a native module
-  (`node-gyp-build`), which adds install friction for `@chad3814/nzb-cli` users. The
-  alternative is a pure-TS decoder — roughly 20 lines for the hot loop, at some
-  throughput cost. Not yet decided; the decode call site should be isolated behind an
-  interface either way.
-- **Connection pooling.** Whether pooling lives here, in `@chad3814/nntp`, or in a
-  separate package. It is a transport concern, so probably `@chad3814/nntp` — but the
-  parallel-slice fetching that makes pooling worthwhile lives here.
+| Module        | Role                                                    |
+| ------------- | ------------------------------------------------------- |
+| `range.ts`    | Slice and range arithmetic. Pure, no document, no I/O   |
+| `geometry.ts` | Probing segment 1, and verifying every article after it |
+| `handle.ts`   | The `File`-like handle: windows, fetching, streaming    |
+| `mime.ts`     | Filename to MIME type                                   |
+
+`range.ts` is deliberately free of NZB identifiers and transports: given sizes and a
+range, it returns which segments to fetch and how to trim each. That is the part
+most worth testing exhaustively, and it can be tested with neither a document nor a
+network.
+
+## Known limits
+
+- **Articles are fetched sequentially.** Chunks have to be emitted in file order, so
+  fetching a range concurrently would mean buffering it — which is what `stream()`
+  exists to avoid. A bounded prefetch window is the obvious next step; until then,
+  a large read runs at one article at a time regardless of the pool's size.
+- **Only segment 1 is cached**, since opening already paid for it. Re-reading any
+  other range re-fetches.
+
+## Testing
+
+109 unit tests over synthetic posts built by `test/post.ts`, which assembles real
+yEnc articles — CRCs from `node:zlib`, so a fixture cannot agree with a broken
+decoder by construction — and wraps them in a recording `ArticleSource` that makes
+"which articles did that cost?" a plain assertion.
+
+Mutation-tested. Skipping placement verification, clamping a nested slice to the file
+instead of its parent, restoring the `end === 0` short-circuit, assuming geometry is
+always uniform, dropping the filename check, misindexing segments, disabling CRC
+checks, resolving the whole file instead of the window, and failing to advance the
+write offset each fail at least one test. Two mutants survived the first pass and
+both were real gaps: `=ypart end=` was only ever checked by a test that a length
+check caught first, and yielded chunks aliased the retained article closely enough
+that a consumer writing in place could corrupt a later read. Both now have tests.

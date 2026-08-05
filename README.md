@@ -5,7 +5,7 @@ access to NZB contents, and a CLI. Written because the existing npm packages in 
 space are either abandoned or subtly wrong, and because none of them keep credentials
 out of the libraries that don't need them.
 
-**Status: in progress.** Three packages are implemented and tested; the rest ship
+**Status: in progress.** Four packages are implemented and tested; the rest ship
 complete type definitions and no implementation yet. All packages are `private`
 until they have working code and tests.
 
@@ -17,7 +17,7 @@ until they have working code and tests.
 | `@chad3814/yenc`       | yEnc decode, header parsing, CRC32 verification     | implemented        |
 | `@chad3814/nntp`       | NNTP client (RFC 3977), TLS, `AUTHINFO`, unstuffing | implemented        |
 | `@chad3814/par2`       | PAR2 verification and repair                        | namespace reserved |
-| `@chad3814/nzb`        | `File`-like handles with range-accurate fetching    | range arithmetic   |
+| `@chad3814/nzb`        | `File`-like handles with range-accurate fetching    | implemented        |
 | `@chad3814/nzb-cli`    | `nzb inspect` / `stat` / `get` / `decode`           | option types only  |
 
 Dependency direction, strictly one-way:
@@ -50,8 +50,10 @@ subject-derived guesses are namespaced under `subjectHints` so they can't be mis
 for facts.
 
 **Slicing is a contract, not an implementation detail.** `slice()` does no I/O;
-`slice(0, 0)` is empty; nested slices clamp to their parent; segment uniformity is
-proven rather than assumed. Each of those is a bug in the package this replaces.
+`slice(0, 0)` is empty; nested slices clamp to their parent; segment offsets are
+predicted from segment 1 for speed and then verified against every article's own
+`=ypart` header before its bytes are used. Each of those is a bug in the package
+this replaces — which takes the same prediction and never checks it.
 
 **Strict TypeScript, no escape hatches.** `any` is banned by lint, as are non-null
 assertions — the reference implementation used `props!.part.end` to defeat a
