@@ -3,6 +3,7 @@
   "files": [],
   "references": [
     { "path": "./packages/nzb-parser" },
+    { "path": "./packages/yenc" },
     { "path": "./packages/nntp" },
     { "path": "./packages/par2" },
     { "path": "./packages/nzb" },

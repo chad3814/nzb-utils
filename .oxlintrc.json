@@ -25,6 +25,15 @@
       }
     },
     {
+      "files": ["packages/*/src/errors.ts"],
+      "rules": {
+        // A package's error taxonomy belongs in one file. Splitting sibling
+        // error classes across files to satisfy a per-file count makes the set
+        // of things a package can throw harder to see, not easier.
+        "max-classes-per-file": "off"
+      }
+    },
+    {
       "files": ["packages/*/test/**/*.ts"],
       "rules": {
         // A `describe` block is a suite, not a function anyone has to read as
