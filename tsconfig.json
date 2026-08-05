@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "files": [],
+  "references": [
+    { "path": "./packages/nzb-parser" },
+    { "path": "./packages/nntp" },
+    { "path": "./packages/par2" },
+    { "path": "./packages/nzb" },
+    { "path": "./packages/nzb-cli" }
+  ]
+}

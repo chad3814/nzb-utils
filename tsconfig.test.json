@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    // Tests are type-checked but never emitted, so this project is deliberately
+    // not composite — `tsc -b` builds `src`, this checks `test`.
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["packages/*/test/**/*.ts", "vitest.config.ts"]
+}

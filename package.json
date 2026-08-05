@@ -1,0 +1,36 @@
+{
+  "name": "nzb-utils",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Open, strictly-typed Usenet/NZB toolkit: NZB parsing, NNTP transport, yEnc-backed file access, and a CLI",
+  "type": "module",
+  "license": "MIT",
+  "author": "Chad Walker",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chad3814/nzb-utils.git"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean",
+    "typecheck": "tsc -b && tsc -p tsconfig.test.json",
+    "lint": "oxlint --deny-warnings",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "oxlint": "^1.77.0",
+    "prettier": "^3.9.6",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

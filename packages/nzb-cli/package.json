@@ -1,0 +1,47 @@
+{
+  "name": "@chad3814/nzb-cli",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Command-line tool to inspect NZBs and download some or all of their contents",
+  "keywords": [
+    "nzb",
+    "usenet",
+    "cli",
+    "nntp",
+    "yenc"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "author": "Chad Walker",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chad3814/nzb-utils.git",
+    "directory": "packages/nzb-cli"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@chad3814/nzb": "0.0.0",
+    "@chad3814/nzb-parser": "0.0.0"
+  }
+}

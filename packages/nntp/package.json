@@ -1,0 +1,43 @@
+{
+  "name": "@chad3814/nntp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Strictly-typed NNTP client (RFC 3977) with TLS, AUTHINFO, and dot-unstuffing",
+  "keywords": [
+    "nntp",
+    "usenet",
+    "news",
+    "rfc3977"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "author": "Chad Walker",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chad3814/nzb-utils.git",
+    "directory": "packages/nntp"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

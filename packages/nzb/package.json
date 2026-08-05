@@ -1,0 +1,48 @@
+{
+  "name": "@chad3814/nzb",
+  "version": "0.0.0",
+  "private": true,
+  "description": "W3C File-like access to NZB contents with range-accurate segment fetching",
+  "keywords": [
+    "nzb",
+    "usenet",
+    "nntp",
+    "yenc",
+    "file",
+    "streaming"
+  ],
+  "type": "module",
+  "license": "MIT",
+  "author": "Chad Walker",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chad3814/nzb-utils.git",
+    "directory": "packages/nzb"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@chad3814/nzb-parser": "0.0.0"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": ["**/dist/**", "**/node_modules/**"],
+  "plugins": ["typescript", "unicorn", "oxc", "promise", "node"],
+  "categories": {
+    "correctness": "deny",
+    "suspicious": "deny",
+    "perf": "deny",
+    "pedantic": "warn"
+  },
+  "rules": {
+    "typescript/no-explicit-any": "deny",
+    "typescript/no-non-null-assertion": "deny",
+    "typescript/consistent-type-imports": "deny",
+    "typescript/no-unnecessary-type-assertion": "deny",
+    "no-console": "deny",
+    "promise/prefer-await-to-callbacks": "warn",
+    "node/no-sync": "deny"
+  },
+  "overrides": [
+    {
+      "files": ["packages/nzb-cli/**/*.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["packages/*/test/**/*.ts"],
+      "rules": {
+        // A `describe` block is a suite, not a function anyone has to read as
+        // one. Splitting suites to satisfy a line budget makes tests harder to
+        // find, not easier.
+        "max-lines-per-function": "off"
+      }
+    }
+  ]
+}
