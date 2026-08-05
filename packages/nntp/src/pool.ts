@@ -1,3 +1,5 @@
+import { memoizeCredentials } from './auth.ts';
+import type { CredentialProviders } from './auth.ts';
 import { NntpClient } from './client.ts';
 import { NntpConnectionError } from './errors.ts';
 import type { NntpArticleResponse, NntpCredentials, NntpEndpoint, NntpResponse } from './models.ts';
@@ -5,12 +7,31 @@ import type { NntpArticleResponse, NntpCredentials, NntpEndpoint, NntpResponse }
 export interface NntpPoolOptions {
   readonly endpoint: NntpEndpoint;
   /**
-   * Used to authenticate each connection as it is opened, then dropped. Not
-   * stored on the pool, not readable back off it, and never included in an
-   * error.
+   * Used to authenticate each connection as it is opened. Never readable back
+   * off the pool, never logged, never included in an error.
+   *
+   * Literals and providers are both accepted; both are normalised to a provider
+   * and memoized once here, so a pool of eight connections makes one trip to the
+   * underlying source rather than eight. See
+   * {@link NntpPoolOptions.credentialTtlMs} for the expiry that goes with that.
    */
   readonly credentials: NntpCredentials;
-  /** Maximum simultaneous connections. Providers cap this; respect their cap. */
+  /**
+   * How long a resolved credential stays cached, in milliseconds.
+   *
+   * Set this when the credential comes from something that issues them with a
+   * lifetime. Without it the value is cached for the life of the pool, and a
+   * pool outliving its token keeps presenting an expired one — which the server
+   * reports as an authentication failure, indistinguishable from a wrong
+   * password.
+   *
+   * The clock starts when the value arrives, not when it was requested.
+   */
+  readonly credentialTtlMs?: number;
+  /**
+   * Maximum simultaneous connections. Usenet providers cap this; respect their
+   * cap.
+   */
   readonly connections: number;
   readonly timeoutMs?: number;
 }
@@ -39,8 +60,14 @@ export class NntpPool {
   readonly #endpoint: NntpEndpoint;
   readonly #limit: number;
   readonly #timeoutMs: number | undefined;
-  /** Held to authenticate new connections; never exposed. */
-  readonly #login: NntpCredentials;
+  /**
+   * Held to authenticate new connections; never exposed.
+   *
+   * These are memoized providers, so their closures retain the resolved
+   * credential until it expires. That is a deliberate trade for not making a
+   * vault round-trip per connection, and `credentialTtlMs` is what bounds it.
+   */
+  readonly #login: CredentialProviders;
 
   readonly #idle: NntpClient[] = [];
   readonly #waiting: ((client: NntpClient) => void)[] = [];
@@ -53,7 +80,7 @@ export class NntpPool {
     this.#endpoint = options.endpoint;
     this.#limit = Math.max(1, options.connections);
     this.#timeoutMs = options.timeoutMs;
-    this.#login = { user: options.credentials.user, pass: options.credentials.pass };
+    this.#login = memoizeCredentials(options.credentials, options.credentialTtlMs);
   }
 
   /** Per-attempt connection failures, most recent last. */

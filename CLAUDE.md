@@ -39,6 +39,21 @@ audit.
    `authenticate()` and nowhere else. Never store it on an instance, log it, include
    it in an error message, or accept it as a CLI argument. `@chad3814/nzb` takes an
    injected `ArticleSource` instead and has no credential-shaped parameter at all.
+   A field is `NntpSecret` — `string | Provider<string>` from
+   `@chad3814/secret-provider`, which is `@chad3814/nntp`'s one runtime
+   dependency. Follow that package's "accepting a provider in your own library"
+   guidance: normalise and `memoize` once at the boundary, resolve at each point
+   of use, and let `ProviderError` propagate rather than wrapping it — wrapping
+   destroys `tryNextLink` and the aggregated list of sources tried.
+
+   **`NntpPool` therefore does retain a resolved credential**, inside its
+   memoized providers' closures, bounded by `credentialTtlMs`. That is a
+   deliberate exception to "never store it", taken so a pool of eight makes one
+   trip to the vault rather than eight; do not describe the pool as retaining
+   nothing. `NntpClient` still retains nothing, and the source-level test
+   enforces that no field is assigned `credentials` or a `resolveSecret(...)`
+   result anywhere in the package.
+
 4. **Never commit or push without explicit approval.** Never publish to npm without
    explicit approval. All packages are `private: true` until they have a working
    implementation _and_ tests; clearing that flag is a publish decision.
@@ -95,8 +110,11 @@ motivated the rewrite. Each needs a test that would fail against the original.
 - **Credential retention is enforced against the source, not at runtime.** A
   `#private` field is invisible to `JSON.stringify`, `Reflect.ownKeys` and
   `util.inspect({ showHidden: true })` alike — all three were checked. A test in
-  `@chad3814/nntp` fails on any `this.x = credentials` assignment in the package
-  instead.
+  `@chad3814/nntp` fails on any `this.x = credentials` or
+  `this.x = resolveSecret(...)` assignment in the package instead. Note this
+  constrains where a credential is _written_, and says nothing about what a
+  memoized provider's closure holds — see hard rule 3 for what `NntpPool`
+  deliberately retains.
 
 - **Segment geometry is predicted, then verified (settled 2026-08-05).** The
   alternative — proving uniformity up front — means fetching every article's header,

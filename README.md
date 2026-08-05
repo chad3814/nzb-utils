@@ -37,7 +37,13 @@ the transport is injected and credentials never reach it.
 
 **Credentials live in exactly one package.** `NntpCredentials` is accepted by
 `@chad3814/nntp`'s `authenticate()` and nowhere else. Never stored, never logged,
-never in an error message, never a CLI argument.
+never in an error message, never a CLI argument. A credential can be a literal or
+a `Provider<string>` from
+[`@chad3814/secret-provider`](https://github.com/chad3814/secret-provider), so it
+can come straight from a vault, resolved at the moment of use, without ever
+landing in a config file. `NntpPool` memoizes it once at its boundary — one trip
+to the source rather than one per connection — with `credentialTtlMs` for sources
+that issue credentials with a lifetime.
 
 **Dot-unstuffing happens in the transport.** NNTP multi-line responses are
 dot-stuffed; yEnc decoders do not undo it. Every `Buffer` leaving `@chad3814/nntp` is

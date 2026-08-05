@@ -5,6 +5,7 @@ export type { NntpConnectionFailure, NntpPoolOptions } from './pool.ts';
 export {
   NntpAuthError,
   NntpConnectionError,
+  NntpCredentialError,
   NntpProtocolError,
   NntpTimeoutError,
 } from './errors.ts';
@@ -14,5 +15,6 @@ export type {
   NntpCredentials,
   NntpEndpoint,
   NntpResponse,
+  NntpSecret,
   NntpStatus,
 } from './models.ts';

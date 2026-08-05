@@ -29,15 +29,37 @@ export interface NntpEndpoint {
 }
 
 /**
+ * A credential: either a literal, or an async thunk that produces one.
+ *
+ * The thunk form is structurally identical to `Provider<string>` from
+ * `@chad3814/secret-provider`, which is where the shape comes from and what it
+ * exists to accept — `chain(fromEnv(...), fromFile(...))` and friends satisfy
+ * it directly. It is declared structurally rather than imported so this package
+ * keeps zero runtime dependencies, for the same reason `@chad3814/nzb` declares
+ * its own `ArticleSource` instead of depending on this one.
+ *
+ * A provider is the better shape for a secret: it defers the fetch until the
+ * moment of use, it lets the value come straight from a vault or a subprocess
+ * without passing through a config file, and it puts the decision about caching
+ * in the caller's hands rather than this package's.
+ */
+export type NntpSecret = string | (() => Promise<string>);
+
+/**
  * Credentials for `AUTHINFO USER` / `AUTHINFO PASS`.
  *
  * Consumed by the transport and never stored on the client, written to a log,
  * included in an error message, or re-emitted. No other package in this repo
  * accepts this type.
+ *
+ * Each field is resolved at the moment its command is built, and the password
+ * only if the server actually asks for it — some accept a bare username, and
+ * there is no reason to make a vault round-trip for a secret that will not be
+ * sent.
  */
 export interface NntpCredentials {
-  readonly user: string;
-  readonly pass: string;
+  readonly user: NntpSecret;
+  readonly pass: NntpSecret;
 }
 
 /** A single-line status response. */

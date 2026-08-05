@@ -1,9 +1,5 @@
-import {
-  NntpAuthError,
-  NntpConnectionError,
-  NntpProtocolError,
-  NntpTimeoutError,
-} from './errors.ts';
+import { runAuthInfo } from './auth.ts';
+import { NntpConnectionError, NntpProtocolError, NntpTimeoutError } from './errors.ts';
 import { NNTP_STATUS } from './models.ts';
 import type { NntpArticleResponse, NntpCredentials, NntpEndpoint, NntpResponse } from './models.ts';
 import { ResponseBuffer } from './response-buffer.ts';
@@ -80,34 +76,23 @@ export class NntpClient {
   }
 
   /**
-   * @param credentials Consumed immediately and not retained. Do not log the
-   *   argument at a call site either — that defeats the point.
+   * @param credentials Either literals or providers. Resolved here, used to
+   *   build one command each, and never retained — a resolved secret exists
+   *   only as a local. Do not log the argument at a call site either; that
+   *   defeats the point.
+   *
+   *   Resolution happens inside the command lock so nothing can interleave
+   *   between obtaining a credential and sending it, and the password is
+   *   resolved only if the server asks for one.
    */
   authenticate(credentials: NntpCredentials): Promise<NntpResponse> {
-    return this.#serialize(async () => {
-      const user = this.#parse(
-        await this.#command(`AUTHINFO USER ${credentials.user}`, 'AUTHINFO USER'),
-      );
-
-      // Some servers accept a bare username and skip the password exchange.
-      if (user.code === NNTP_STATUS.authenticationAccepted) {
-        return user;
-      }
-      if (user.code !== NNTP_STATUS.passwordRequired) {
-        throw new NntpAuthError(user.code, user.message);
-      }
-
-      // The command is built inline and the redacted label is what any error
-      // or timeout reports, so the secret never reaches a message.
-      const pass = this.#parse(
-        await this.#command(`AUTHINFO PASS ${credentials.pass}`, 'AUTHINFO PASS'),
-      );
-      if (pass.code !== NNTP_STATUS.authenticationAccepted) {
-        throw new NntpAuthError(pass.code, pass.message);
-      }
-
-      return pass;
-    });
+    // Held inside the command lock for the whole exchange, resolution included,
+    // so nothing can interleave between obtaining a credential and sending it.
+    return this.#serialize(() =>
+      runAuthInfo(credentials, async (line, label) =>
+        this.#parse(await this.#command(line, label)),
+      ),
+    );
   }
 
   group(name: string): Promise<NntpResponse> {

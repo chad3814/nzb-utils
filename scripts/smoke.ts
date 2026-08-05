@@ -27,6 +27,7 @@ import { NntpPool } from '@chad3814/nntp';
 import type { NntpEndpoint } from '@chad3814/nntp';
 import { parseNzb } from '@chad3814/nzb-parser';
 import { openNzbFile } from '@chad3814/nzb';
+import { fromEnv } from '@chad3814/secret-provider';
 
 import {
   boundaryJoin,
@@ -104,8 +105,12 @@ say(
 say(`groups: ${nzb.groups.join(', ')}`);
 
 const pool = new NntpPool({
+  // Providers rather than literals, which is what the credential path is built
+  // for: nothing is read until a connection is actually opened. No memoize()
+  // here on purpose — the pool normalises and memoizes at its own boundary, and
+  // this harness exists partly to check that it does.
+  credentials: { user: fromEnv('NNTP_USER'), pass: fromEnv('NNTP_PASS') },
   endpoint: endpoint(),
-  credentials: { user: required('NNTP_USER'), pass: required('NNTP_PASS') },
   connections: Number(process.env['NNTP_CONNECTIONS'] ?? '4'),
   timeoutMs: 30_000,
 });

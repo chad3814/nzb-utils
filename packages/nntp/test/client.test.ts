@@ -151,6 +151,12 @@ describe('NntpClient authentication', () => {
       expect(text, `${file} assigns credentials to a field`).not.toMatch(
         /(?:this|self)\s*\.\s*#?\w+\s*=\s*credentials\b/u,
       );
+      // Providers made a second slip possible that the rule above cannot see:
+      // stashing the *resolved* value, which is a plain string by then and no
+      // longer called `credentials`. A resolved secret must stay a local.
+      expect(text, `${file} retains a resolved secret on a field`).not.toMatch(
+        /(?:this|self)\s*\.\s*#?\w+\s*=\s*(?:await\s+)?resolveSecret\b/u,
+      );
     }
   });
 });

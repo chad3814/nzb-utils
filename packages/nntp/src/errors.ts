@@ -38,6 +38,27 @@ export class NntpAuthError extends Error {
   }
 }
 
+/**
+ * A credential could not be obtained, or was not usable once obtained.
+ *
+ * Distinct from {@link NntpAuthError}, which means the server saw a credential
+ * and refused it. This one means no credential ever reached the wire: the
+ * provider chain came up empty, or what it produced could not safely be put in
+ * a command. Collapsing the two would make a missing environment variable look
+ * like a wrong password.
+ *
+ * The offending value is never part of the message. A `cause` is preserved
+ * because a chain's rejection lists every source it tried, which is the whole
+ * point of using one — a provider is responsible for keeping secrets out of its
+ * own error messages.
+ */
+export class NntpCredentialError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'NntpCredentialError';
+  }
+}
+
 /** A command produced no complete response within the configured timeout. */
 export class NntpTimeoutError extends Error {
   readonly timeoutMs: number;
