@@ -87,6 +87,11 @@ motivated the rewrite. Each needs a test that would fail against the original.
 - **Pooling lives in `@chad3814/nntp`.** Forced by hard rule 3: a pool has to
   authenticate N connections, and credentials never leave that package.
   `@chad3814/nzb` consumes the pool through the structural `ArticleSource` seam.
+- **Credential retention is enforced against the source, not at runtime.** A
+  `#private` field is invisible to `JSON.stringify`, `Reflect.ownKeys` and
+  `util.inspect({ showHidden: true })` alike — all three were checked. A test in
+  `@chad3814/nntp` fails on any `this.x = credentials` assignment in the package
+  instead.
 
 Still open:
 

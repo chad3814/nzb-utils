@@ -5,7 +5,7 @@ access to NZB contents, and a CLI. Written because the existing npm packages in 
 space are either abandoned or subtly wrong, and because none of them keep credentials
 out of the libraries that don't need them.
 
-**Status: in progress.** Two packages are implemented and tested; the rest ship
+**Status: in progress.** Three packages are implemented and tested; the rest ship
 complete type definitions and no implementation yet. All packages are `private`
 until they have working code and tests.
 
@@ -15,7 +15,7 @@ until they have working code and tests.
 | ---------------------- | --------------------------------------------------- | ------------------ |
 | `@chad3814/nzb-parser` | NZB 1.1 XML → typed, immutable object graph         | implemented        |
 | `@chad3814/yenc`       | yEnc decode, header parsing, CRC32 verification     | implemented        |
-| `@chad3814/nntp`       | NNTP client (RFC 3977), TLS, `AUTHINFO`, unstuffing | types only         |
+| `@chad3814/nntp`       | NNTP client (RFC 3977), TLS, `AUTHINFO`, unstuffing | implemented        |
 | `@chad3814/par2`       | PAR2 verification and repair                        | namespace reserved |
 | `@chad3814/nzb`        | `File`-like handles with range-accurate fetching    | types only         |
 | `@chad3814/nzb-cli`    | `nzb inspect` / `stat` / `get` / `decode`           | option types only  |

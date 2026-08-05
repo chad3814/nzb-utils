@@ -85,36 +85,3 @@ export const NNTP_STATUS = {
 } as const;
 
 export type NntpStatus = (typeof NNTP_STATUS)[keyof typeof NNTP_STATUS];
-
-/**
- * Client surface.
- *
- * Message-IDs are passed **without** angle brackets — the same form the NZB
- * stores — and the client adds them. Message-ID lookup does not require a
- * selected newsgroup (RFC 3977 §6.2.1), so {@link NntpClient.group} is optional
- * and only needed for article-number access or fussy providers.
- */
-export interface NntpClient {
-  connect(): Promise<NntpResponse>;
-  authenticate(credentials: NntpCredentials): Promise<NntpResponse>;
-  group(name: string): Promise<NntpResponse>;
-  /** Existence check that transfers no payload. */
-  stat(messageId: string): Promise<NntpResponse>;
-  head(messageId: string): Promise<NntpArticleResponse>;
-  body(messageId: string): Promise<NntpArticleResponse>;
-  article(messageId: string): Promise<NntpArticleResponse>;
-  quit(): Promise<void>;
-  /** Tear down the socket without a protocol handshake. */
-  destroy(): void;
-}
-
-/**
- * A pool's per-connection outcome. Connection failures must be individually
- * attributable — collapsing them into one generic error makes a wrong password
- * indistinguishable from a provider connection cap.
- */
-export interface NntpConnectionOutcome {
-  readonly index: number;
-  readonly connected: boolean;
-  readonly failureReason: string | null;
-}
