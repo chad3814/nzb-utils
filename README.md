@@ -70,6 +70,29 @@ npm run build     # tsc -b across all project references
 `typecheck` and `build` are the same command: with composite project references, the
 declaration emit _is_ the type check.
 
+### Live smoke test
+
+`npm run check` never touches the network. `scripts/smoke.ts` does: it points the
+whole stack at a real NZB and a real provider and checks the things a synthetic
+fixture cannot establish — that the geometry prediction holds across a
+1800-article post, that a slice assembled across an article boundary is
+byte-identical to the articles fetched separately and joined by hand, and that
+the articles are still retained at all.
+
+```sh
+cp smoke.env.example smoke.env    # edit; it is gitignored
+op run --env-file=smoke.env -- node scripts/smoke.ts path/to/file.nzb
+```
+
+Credentials are 1Password secret references resolved by `op run` into the child
+process's environment, so they never reach a file, a shell history, or a
+terminal transcript. Every line the harness prints is also passed through a
+scrubber, so a credential that somehow reached an error message would be
+reported as a leak rather than printed.
+
+Expect the odd `430`: individual articles do expire, and partial availability is
+a fact about Usenet rather than a bug in the client.
+
 ## Layout
 
 This repo uses the bare-repo + worktrees layout. Code lives in

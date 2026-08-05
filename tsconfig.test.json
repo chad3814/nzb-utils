@@ -2,13 +2,15 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    // Tests are type-checked but never emitted, so this project is deliberately
-    // not composite — `tsc -b` builds `src`, this checks `test`.
+    // Everything here is type-checked but never emitted, so this project is
+    // deliberately not composite — `tsc -b` builds `src`, this checks the rest.
+    // `scripts/` resolves the packages through node_modules, so it reads the
+    // built .d.ts files and must run after `tsc -b`.
     "composite": false,
     "declaration": false,
     "declarationMap": false,
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["packages/*/test/**/*.ts", "vitest.config.ts"]
+  "include": ["packages/*/test/**/*.ts", "scripts/**/*.ts", "vitest.config.ts"]
 }

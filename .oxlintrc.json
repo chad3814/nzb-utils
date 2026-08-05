@@ -25,6 +25,16 @@
       }
     },
     {
+      "files": ["scripts/**/*.ts"],
+      "rules": {
+        // A test harness whose whole job is to print a report.
+        "no-console": "off",
+        // Articles are fetched one at a time on purpose: the report should name
+        // the article that failed, not a rejected batch.
+        "no-await-in-loop": "off"
+      }
+    },
+    {
       "files": ["packages/*/src/errors.ts"],
       "rules": {
         // A package's error taxonomy belongs in one file. Splitting sibling

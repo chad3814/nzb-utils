@@ -141,3 +141,7 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Live smoke-test config: an op:// env template, never real credentials.
+# Kept out of the repo because the provider and account are the runner's own.
+smoke.env
