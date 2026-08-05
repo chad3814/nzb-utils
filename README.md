@@ -17,7 +17,7 @@ until they have working code and tests.
 | `@chad3814/yenc`       | yEnc decode, header parsing, CRC32 verification     | implemented        |
 | `@chad3814/nntp`       | NNTP client (RFC 3977), TLS, `AUTHINFO`, unstuffing | implemented        |
 | `@chad3814/par2`       | PAR2 verification and repair                        | namespace reserved |
-| `@chad3814/nzb`        | `File`-like handles with range-accurate fetching    | types only         |
+| `@chad3814/nzb`        | `File`-like handles with range-accurate fetching    | range arithmetic   |
 | `@chad3814/nzb-cli`    | `nzb inspect` / `stat` / `get` / `decode`           | option types only  |
 
 Dependency direction, strictly one-way:

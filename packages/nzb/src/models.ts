@@ -76,17 +76,28 @@ export interface ByteRange {
  */
 export interface ResolvedRange {
   readonly range: ByteRange;
-  readonly segments: readonly ResolvedSegment[];
+  readonly segments: readonly SegmentSlice[];
 }
 
-export interface ResolvedSegment {
+/**
+ * Which part of one segment a range needs, derived from geometry alone.
+ *
+ * Deliberately carries no Message-ID: geometry is arithmetic over sizes, and
+ * keeping it free of NZB identifiers is what makes it testable without a
+ * document or a network.
+ */
+export interface SegmentSlice {
   /** 1-based segment number, matching the NZB. */
   readonly number: number;
-  readonly messageId: string;
   /** Offset within this segment's decoded bytes at which to begin copying. */
   readonly offsetInSegment: number;
   /** Number of bytes to copy from this segment. */
   readonly byteLength: number;
+}
+
+/** A {@link SegmentSlice} joined to the article that backs it. */
+export interface ResolvedSegment extends SegmentSlice {
+  readonly messageId: string;
 }
 
 /**

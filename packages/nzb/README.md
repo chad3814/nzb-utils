@@ -3,8 +3,10 @@
 W3C `File`-like access to the contents of an NZB. Slicing a handle downloads only the
 articles that overlap the requested range.
 
-**Status: types only.** The contracts in `src/models.ts` are complete; the
-implementation has not landed yet.
+**Status: partially implemented.** `src/range.ts` — the slice and range
+arithmetic the audit was about — is complete and tested. `NzbFileHandle` itself,
+which joins that arithmetic to an `ArticleSource` and actually fetches, has not
+landed yet.
 
 ## Why this shape
 
