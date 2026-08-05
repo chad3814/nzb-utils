@@ -15,8 +15,10 @@ const LF = 0x0a;
  * {@link decodeArticle} for a complete article.
  *
  * Dot-unstuffing is **not** done here and must already have happened in the
- * transport. NNTP sends a body line beginning with `.` as `..`; a decoder that
- * assumes otherwise silently corrupts roughly one article in a few hundred.
+ * transport. NNTP sends a body line beginning with `.` as `..`, and a decoder
+ * fed stuffed bytes corrupts them with nothing to signal it. Whether that ever
+ * fires depends on the encoder: yEnc recommends escaping `.` at the start of a
+ * line, and a real post measured 0 stuffed lines in 66,563.
  */
 export function decodeBytes(encoded: Uint8Array): Buffer {
   // The decoded form is never longer than the encoded form, so one allocation

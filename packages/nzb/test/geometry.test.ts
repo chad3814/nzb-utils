@@ -246,16 +246,19 @@ describe('verifyPlacement', () => {
     }).toThrow(/size/u);
   });
 
-  it('rejects an article for a different filename', () => {
-    // A provider that serves the wrong article for a Message-ID, or an NZB
-    // that lists another file's segments, both land here.
-    const wrong = {
+  it('accepts an article whose filename differs from segment 1', () => {
+    // Obfuscated posts randomise =ybegin name= per article -- verified against
+    // a real 1868-article post where all seven probed articles carried
+    // different names and identical size= and =ypart values. Requiring the
+    // names to agree rejects most of Usenet, and the size and placement checks
+    // already cover what the name check was reaching for.
+    const renamed = {
       ...article({ begin: 200, end: 300 }, 100),
-      header: { part: null, total: null, line: null, size: 340, name: 'other.bin' },
+      header: { part: null, total: null, line: null, size: 340, name: 'T08H0qZlxYZamAanLn' },
     };
 
     expect(() => {
-      verifyPlacement(wrong, 3, geometry, header);
-    }).toThrow(/name/u);
+      verifyPlacement(renamed, 3, geometry, header);
+    }).not.toThrow();
   });
 });

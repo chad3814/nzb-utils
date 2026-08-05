@@ -41,8 +41,19 @@ package.
 
 - **Dot-unstuffing happens here.** NNTP transmits a body line beginning with `.`
   as `..`. yEnc decoders do not undo it — `@thaunknown/yencode` calls its
-  decoder with `stripDots = false` — so a transport that skips it silently
-  corrupts roughly one article in a few hundred.
+  decoder with `stripDots = false` — so a transport that skips it corrupts the
+  article silently, with no checksum failure to point at it.
+
+  How often that fires depends entirely on the encoder. yEnc's spec _recommends_
+  escaping `.` at the start of a line, and an encoder that follows the
+  recommendation never produces a line NNTP would stuff. Measured against a real
+  post: **0 stuffed lines in 66,563**, across two 4 MiB articles. So this is a
+  correctness requirement, not a common event — earlier drafts of these docs
+  claimed "roughly one article in a few hundred", which that measurement does not
+  support for encoders that escape leading dots. It still has to be right,
+  because the encoders that skip the recommendation exist and nothing downstream
+  would catch them.
+
 - **Empty bodies do not hang.** A body that is only a terminator has no
   preceding line, so the usual scan for `\r\n.\r\n` never matches and the read
   blocks until the socket times out.

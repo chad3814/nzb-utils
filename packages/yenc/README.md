@@ -49,8 +49,10 @@ costs every CLI user an install that can fail.
 
 - **Dot-unstuffing.** NNTP transmits a body line beginning with `.` as `..`, and
   removing that is the transport's job — `@chad3814/nntp` hands out bytes that
-  are already unstuffed. A decoder that assumes otherwise silently corrupts
-  roughly one article in a few hundred.
+  are already unstuffed. A decoder fed stuffed bytes corrupts them silently. How
+  often that matters depends on the encoder: yEnc recommends escaping `.` at the
+  start of a line, and a real post measured 0 stuffed lines in 66,563, so this is
+  a correctness requirement rather than a frequent event.
 - **Encoding.** Decoding is what a downloader needs. An encoder will land when
   there is a reason to post.
 

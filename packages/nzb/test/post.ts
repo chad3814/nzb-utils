@@ -62,6 +62,8 @@ export interface PostOptions {
   readonly declaredRanges?: ReadonlyMap<number, WireRange>;
   /** Override the `=ybegin name=` of individual articles, keyed by 0-based index. */
   readonly declaredNames?: ReadonlyMap<number, string>;
+  /** Override the `=ybegin size=` of individual articles, keyed by 0-based index. */
+  readonly declaredSizes?: ReadonlyMap<number, number>;
   /** Corrupt the payload of individual articles, keyed by 0-based index. */
   readonly corrupt?: ReadonlySet<number>;
 }
@@ -134,7 +136,7 @@ export function buildPost(options: PostOptions): Post {
 
     const article = buildArticle({
       name: options.declaredNames?.get(index) ?? name,
-      declaredTotal,
+      declaredTotal: options.declaredSizes?.get(index) ?? declaredTotal,
       part: multipart ? index + 1 : null,
       partCount: options.segmentSizes.length,
       payload: options.corrupt?.has(index) ? corrupted(payload) : payload,

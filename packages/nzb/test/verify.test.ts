@@ -54,10 +54,30 @@ describe('predict-then-verify', () => {
     await expect(handle.slice(0, 10).bytes()).rejects.toThrow(/uniform/u);
   });
 
-  it('refuses when a provider serves an article from a different file', async () => {
+  it('reads an obfuscated post whose articles all carry different filenames', async () => {
+    // The common case on real Usenet, not an edge case: every article of the
+    // 1868-article post this was tested against declares its own random
+    // =ybegin name=. Only segment 1's name reaches NzbFileHandle.name, and for
+    // posts like this one that name is noise -- the subject is the only place a
+    // human-readable name exists, and the parser keeps it under subjectHints
+    // precisely because it is a guess.
     const post = buildPost({
       segmentSizes: [100, 100],
-      declaredNames: new Map([[1, 'somethingelse.bin']]),
+      declaredNames: new Map([[1, 'T08H0qZlxYZamAanLnOZ9G5satAKap1wFgTOgrcWx']]),
+    });
+    const handle = await openNzbFile(post.file, post.source);
+
+    await expect(handle.slice(100, 110).bytes()).resolves.toEqual(
+      new Uint8Array(post.data.subarray(100, 110)),
+    );
+  });
+
+  it('refuses when an article declares a different whole-file size', async () => {
+    // What the filename check was reaching for, done with the field posters do
+    // not randomise: every article of a post repeats the same =ybegin size=.
+    const post = buildPost({
+      segmentSizes: [100, 100],
+      declaredSizes: new Map([[1, 999]]),
     });
     const handle = await openNzbFile(post.file, post.source);
 

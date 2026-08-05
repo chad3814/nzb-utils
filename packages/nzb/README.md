@@ -112,6 +112,37 @@ range, it returns which segments to fetch and how to trim each. That is the part
 most worth testing exhaustively, and it can be tested with neither a document nor a
 network.
 
+## Verified against a live provider
+
+Run against a real 8-file / 1971-article post (7.91 GiB) over TLS, outside the
+test suite:
+
+- The two retained single-segment files — a par2 index and a thumbnail — opened
+  and read whole. These are the files `nzb-file` throws a `TypeError` on.
+- The 1868-article file opened on **one** article. Its authoritative decoded size
+  (7,834,760,394 B) is 3.17% below the NZB's summed encoded bytes, which is the
+  yEnc overhead the NZB cannot tell you about. Predicted segment size came out at
+  exactly 4 MiB with a 3,994,826 B tail, and 1867 × 4 MiB + tail reproduces the
+  declared total exactly.
+- Every probed article — 1, 2, 3, 500, 1000, 1867, 1868 — sat precisely where
+  uniform arithmetic predicted, so the prediction held across the whole span.
+- `slice(0, 0)` fetched nothing. A 4 MiB head slice came back with `ftyp` at
+  offset 4, an actual MP4 signature. A 4 MiB tail slice fetched one article.
+- A 2 MiB window straddling the segment 2|3 boundary was byte-identical to the
+  two articles fetched separately and joined by hand.
+
+Two things this surfaced that the synthetic fixtures had not:
+
+- **Obfuscated posts randomise `=ybegin name=` per article.** All seven probed
+  articles carried different names alongside an identical `size=`. An earlier
+  version of `verifyPlacement` compared names across articles and rejected the
+  tail slice outright. That check is gone; `size=` and the `=ypart` range cover
+  what it was reaching for. It also means `NzbFileHandle.name` is noise on posts
+  like this one, and the subject is the only human-readable name available.
+- **One article of the post is simply gone** — the `.nfo` returns `430`, while
+  `STAT` confirms every other file is fully retained. Not a bug, but it is what
+  attributable errors are for: the failure names the article and the reason.
+
 ## Known limits
 
 - **Articles are fetched sequentially.** Chunks have to be emitted in file order, so

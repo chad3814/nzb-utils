@@ -7,8 +7,10 @@
  *    beginning with `.` was transmitted as `..`, and a lone `.` terminates the
  *    block. Every `Buffer` this package hands out is already unstuffed. yEnc
  *    decoders do *not* do this — `@thaunknown/yencode` calls its decoder with
- *    `stripDots = false` — so skipping it here silently corrupts roughly one
- *    article in a few hundred.
+ *    `stripDots = false` — so skipping it here corrupts the article with nothing
+ *    to signal it. How often it fires is encoder-dependent: yEnc recommends
+ *    escaping `.` at the start of a line, and a real post measured 0 stuffed
+ *    lines in 66,563.
  * 2. **Bytes, never strings.** Usenet is 8-bit clean and yEnc depends on it.
  *    Article payloads are `Buffer` end to end; only status lines are decoded to
  *    text, and those as `latin1`.

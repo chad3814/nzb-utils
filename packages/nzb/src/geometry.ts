@@ -126,12 +126,14 @@ export function verifyPlacement(
   geometry: SegmentGeometry,
   expected: FileHeader,
 ): void {
-  if (article.header.name !== expected.name) {
-    throw new NzbGeometryError(
-      `segment ${String(number)} carries the name ${article.header.name}, ` +
-        `but the file is ${expected.name}; these articles are not all one file`,
-    );
-  }
+  // `=ybegin name=` is deliberately not compared. Obfuscated posts randomise it
+  // per article -- on the 1868-article post this was tested against, seven
+  // probed articles carried seven different names alongside an identical
+  // `size=` and exactly the predicted `=ypart` ranges. Requiring the names to
+  // agree rejects most of Usenet, and what that check was reaching for --
+  // "is this the article we asked for?" -- is covered better by the two below:
+  // a substituted article would have to declare both the same whole-file size
+  // and the exact byte range predicted for this segment.
   if (article.header.size !== expected.size) {
     throw new NzbGeometryError(
       `segment ${String(number)} of ${expected.name} declares a file size of ` +

@@ -65,7 +65,11 @@ motivated the rewrite. Each needs a test that would fail against the original.
   from segment 1, then verifies each article's `=ypart` range before copying any of
   its bytes, and throws `NzbGeometryError` on a mismatch.
 - **Dot-unstuffing must happen in the transport.** yEnc decoders do not do it;
-  `@thaunknown/yencode` calls its decoder with `stripDots = false`.
+  `@thaunknown/yencode` calls its decoder with `stripDots = false`. Note the
+  frequency claim carried over from the design log ("one article in a few
+  hundred") did not survive measurement: a real post had 0 stuffed lines in
+  66,563, because its encoder escaped `.` at line start as yEnc recommends. Still
+  required for correctness; not a common event.
 - **CRC verification is ours.** `fromPost` never compares `pcrc32`; nothing in
   yencode checks a CRC. If `--verify` is to mean anything, this package does it.
 - **Connection failures must stay individually attributable.** The original's pool
@@ -106,6 +110,29 @@ Still open:
 
 - **`@chad3814/par2` scope.** Verification is genuinely useful on its own;
   Reed-Solomon repair is a much larger job. Verification first.
+
+## Real-world findings (2026-08-05, live run against Newshosting)
+
+Things a synthetic fixture cannot tell you, learned by pointing the stack at a
+real 1971-article post. Do not re-derive these.
+
+- **Obfuscated posts randomise `=ybegin name=` per article.** Seven probed
+  articles of one file carried seven different names with an identical `size=`.
+  Never cross-check filenames between articles; `size=` and `=ypart` are the
+  fields that hold. `NzbFileHandle.name` is therefore often noise, and
+  `subjectHints.name` is the only human-readable name for such posts.
+- **Uniform geometry is the real common case.** Segment size came out at exactly
+  4 MiB, and articles 1, 2, 3, 500, 1000, 1867 and 1868 all sat exactly where
+  the prediction put them.
+- **yEnc overhead measured 3.17%** on that post — the gap between the NZB's
+  summed encoded bytes and the authoritative `=ybegin size=`.
+- **Individual articles do go missing.** One file's only article returned `430`
+  while every other file in the post was fully retained. Partial availability is
+  normal and must not be treated as a client bug.
+
+Credentials for these runs come from 1Password via
+`op run --env-file=... -- node ...`, so they never enter a transcript, a file, or
+a shell history. Never read them any other way.
 
 ## Test fixtures
 
