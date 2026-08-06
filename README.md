@@ -5,9 +5,9 @@ access to NZB contents, and a CLI. Written because the existing npm packages in 
 space are either abandoned or subtly wrong, and because none of them keep credentials
 out of the libraries that don't need them.
 
-**Status: in progress.** Four packages are implemented and tested; the rest ship
-complete type definitions and no implementation yet. All packages are `private`
-until they have working code and tests.
+**Status: in progress.** Five packages are implemented and tested; `par2` is a
+reserved namespace with types only. All packages are `private` until they are
+ready to publish.
 
 ## Packages
 
@@ -18,7 +18,7 @@ until they have working code and tests.
 | `@chad3814/nntp`       | NNTP client (RFC 3977), TLS, `AUTHINFO`, unstuffing | implemented        |
 | `@chad3814/par2`       | PAR2 verification and repair                        | namespace reserved |
 | `@chad3814/nzb`        | `File`-like handles with range-accurate fetching    | implemented        |
-| `@chad3814/nzb-cli`    | `nzb inspect` / `stat` / `get` / `decode`           | option types only  |
+| `@chad3814/nzb-cli`    | `nzb inspect` / `stat` / `get` / `decode`           | implemented        |
 
 Dependency direction, strictly one-way:
 

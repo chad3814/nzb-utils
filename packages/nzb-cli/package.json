@@ -41,7 +41,13 @@
     "build": "tsc -b"
   },
   "dependencies": {
+    "@chad3814/nntp": "0.0.0",
     "@chad3814/nzb": "0.0.0",
-    "@chad3814/nzb-parser": "0.0.0"
+    "@chad3814/nzb-parser": "0.0.0",
+    "@chad3814/secret-provider": "^1.2.0",
+    "@chad3814/yenc": "0.0.0"
+  },
+  "bin": {
+    "nzb": "./dist/bin.js"
   }
 }

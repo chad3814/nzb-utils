@@ -18,8 +18,8 @@ const CRLF = Buffer.from([CR, LF]);
  * 1. **Dot-unstuffing.** A body line beginning with `.` was transmitted with an
  *    extra one. Blocks handed out here have already had it removed. yEnc
  *    decoders do not do this — `@thaunknown/yencode` calls its decoder with
- *    `stripDots = false` — so skipping it corrupts roughly one article in a few
- *    hundred.
+ *    `stripDots = false` — so skipping it corrupts the article with nothing to
+ *    signal it. How often it fires is encoder-dependent; see the README.
  * 2. **Bytes, not text.** Block payloads stay `Buffer` end to end. Only status
  *    lines become strings, and as `latin1`, the one encoding that round-trips
  *    every byte value.
@@ -107,8 +107,12 @@ export class ResponseBuffer {
  *
  * RFC 3977 §3.1.1 stuffs any line whose first character is `.`, so unstuffing
  * strips the first character rather than looking specifically for `..`.
+ *
+ * Exported because a raw article captured outside this client — a socket dump,
+ * a file saved by another tool — still carries stuffing, and nothing in a yEnc
+ * decoder removes it. `nzb decode --dot-stuffed` is that case.
  */
-function unstuff(raw: Buffer): Buffer {
+export function unstuff(raw: Buffer): Buffer {
   if (!startsStuffedLine(raw)) {
     return raw;
   }

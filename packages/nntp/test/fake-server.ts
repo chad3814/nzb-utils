@@ -40,7 +40,7 @@ export async function startFakeServer(options: FakeServerOptions): Promise<FakeS
     // unhandled rejection that fails an unrelated test.
     socket.on('error', () => sockets.delete(socket));
 
-    socket.write(options.greeting ?? DEFAULT_GREETING);
+    socket.write(options.greeting ?? DEFAULT_GREETING, 'latin1');
 
     let pending = '';
     socket.on('data', (chunk: Buffer) => {
@@ -62,7 +62,11 @@ export async function startFakeServer(options: FakeServerOptions): Promise<FakeS
         }
 
         for (const part of typeof reply === 'string' ? [reply] : reply) {
-          socket.write(part);
+          // latin1, not the default utf8: Usenet is 8-bit clean and an article
+          // body is binary. Writing it as utf8 turns every byte above 0x7f into
+          // two, which a test with an ASCII payload never notices and a test
+          // with a real yEnc payload fails on with a baffling CRC error.
+          socket.write(part, 'latin1');
         }
       }
     });

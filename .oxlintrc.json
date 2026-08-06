@@ -35,6 +35,16 @@
       }
     },
     {
+      "files": ["packages/nzb-cli/src/commands/*.ts"],
+      "rules": {
+        // A command walks files and articles one at a time on purpose: progress
+        // has to be reported in order, a failure has to name the article that
+        // caused it, and a whole-file get must stream rather than buffer the
+        // release in memory. Parallelism belongs in the pool, not here.
+        "no-await-in-loop": "off"
+      }
+    },
+    {
       "files": ["packages/*/src/errors.ts"],
       "rules": {
         // A package's error taxonomy belongs in one file. Splitting sibling

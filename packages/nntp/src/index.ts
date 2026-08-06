@@ -1,6 +1,7 @@
 export { NntpClient } from './client.ts';
 export type { NntpClientOptions } from './client.ts';
 export { NntpPool } from './pool.ts';
+export { unstuff } from './response-buffer.ts';
 export type { NntpConnectionFailure, NntpPoolOptions } from './pool.ts';
 export {
   NntpAuthError,

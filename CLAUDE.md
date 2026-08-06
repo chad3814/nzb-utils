@@ -61,6 +61,10 @@ audit.
    top-level config load is the only place a sync call is defensible, and it should
    say why.
 6. **Tests are part of the feature.** No package clears `private` without unit tests.
+7. **No spawning a program named by configuration.** `@chad3814/nzb-cli` has no
+   run-a-command credential source, by decision: `op run -- nzb …` already covers
+   it, and vault access belongs in dedicated `@chad3814/secret-provider-*`
+   packages. Do not reintroduce one.
 
 ## Correctness requirements carried over from the audit
 
@@ -146,7 +150,20 @@ real 1971-article post. Do not re-derive these.
   summed encoded bytes and the authoritative `=ybegin size=`.
 - **Individual articles do go missing.** One file's only article returned `430`
   while every other file in the post was fully retained. Partial availability is
-  normal and must not be treated as a client bug.
+  normal and must not be treated as a client bug — a command that walks a whole
+  document has to skip and report, not abort.
+- **Obfuscation defeats filename matching on the header alone.** `nzb get
+--include '*.mp4'` matched nothing on a real post, because every yEnc name was
+  a random extensionless string. `@chad3814/nzb-cli` matches the header name
+  _and_ `subjectHints.name`, and falls back to the subject for the output
+  filename when the header has no extension. The header stays authoritative
+  about bytes; it is often useless about names.
+- **A sparse head+tail preview works, and is cheap.** 3 articles / 8 MiB of a
+  7.29 GiB file produced a sparse file `ffprobe` read as h264 3840x2160, 38m09s,
+  and `ffmpeg` extracted a full-resolution frame from. `ls` showed the declared
+  7,834,760,394 bytes; `du` showed 8 MiB. How much video you get is head size
+  over bitrate — at 3.4 MB/s a 4 MiB head is ~1.2 seconds, and seeking past it
+  decodes from the hole.
 
 Credentials for these runs come from 1Password via
 `op run --env-file=... -- node ...`, so they never enter a transcript, a file, or
