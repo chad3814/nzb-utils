@@ -5,28 +5,28 @@ access to NZB contents, and a CLI. Written because the existing npm packages in 
 space are either abandoned or subtly wrong, and because none of them keep credentials
 out of the libraries that don't need them.
 
-**Status: in progress.** Five packages are implemented and tested; `par2` is a
-reserved namespace with types only. All packages are `private` until they are
-ready to publish.
+**Status: in progress.** All six packages are implemented and tested. `par2` is
+verification only — there is no Reed-Solomon repair. All packages are `private`
+until they are ready to publish.
 
 ## Packages
 
-| Package                | Purpose                                             | Status             |
-| ---------------------- | --------------------------------------------------- | ------------------ |
-| `@chad3814/nzb-parser` | NZB 1.1 XML → typed, immutable object graph         | implemented        |
-| `@chad3814/yenc`       | yEnc decode, header parsing, CRC32 verification     | implemented        |
-| `@chad3814/nntp`       | NNTP client (RFC 3977), TLS, `AUTHINFO`, unstuffing | implemented        |
-| `@chad3814/par2`       | PAR2 verification and repair                        | namespace reserved |
-| `@chad3814/nzb`        | `File`-like handles with range-accurate fetching    | implemented        |
-| `@chad3814/nzb-cli`    | `nzb inspect` / `stat` / `get` / `decode`           | implemented        |
+| Package                | Purpose                                             | Status      |
+| ---------------------- | --------------------------------------------------- | ----------- |
+| `@chad3814/nzb-parser` | NZB 1.1 XML → typed, immutable object graph         | implemented |
+| `@chad3814/yenc`       | yEnc decode, header parsing, CRC32 verification     | implemented |
+| `@chad3814/nntp`       | NNTP client (RFC 3977), TLS, `AUTHINFO`, unstuffing | implemented |
+| `@chad3814/par2`       | PAR2 parsing and verification (no repair)           | implemented |
+| `@chad3814/nzb`        | `File`-like handles with range-accurate fetching    | implemented |
+| `@chad3814/nzb-cli`    | `nzb inspect` / `stat` / `get` / `decode`           | implemented |
 
 Dependency direction, strictly one-way:
 
 ```
 nzb-cli ──> nzb ──> nzb-parser
-              ├───> yenc
-              └───> par2 (planned)
+              └───> yenc
 nzb-cli ──> nntp        (constructs the transport, injects it into nzb)
+nzb-cli ──> par2        (verifies what nzb downloaded)
 ```
 
 `@chad3814/nzb` does **not** depend on `@chad3814/nntp`. It accepts an
@@ -52,8 +52,10 @@ would catch the omission.
 
 **Nothing in an NZB is authoritative.** No filename, no decoded size, no checksum.
 Filenames come from the yEnc `=ybegin name=` header at fetch time; the parser's
-subject-derived guesses are namespaced under `subjectHints` so they can't be mistaken
-for facts.
+subject-derived guesses are namespaced under `subjectHints` so they can't be
+mistaken for facts. On obfuscated posts even the yEnc name is a random string,
+and the release's own PAR2 index — one article — is the only place the real name
+and an MD5 exist.
 
 **Slicing is a contract, not an implementation detail.** `slice()` does no I/O;
 `slice(0, 0)` is empty; nested slices clamp to their parent; segment offsets are

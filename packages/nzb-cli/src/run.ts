@@ -6,6 +6,7 @@ import { get } from './commands/get.ts';
 import type { CommandResult } from './commands/get.ts';
 import { inspect } from './commands/inspect.ts';
 import { stat } from './commands/stat.ts';
+import { verify } from './commands/verify.ts';
 import { credentialsFor } from './credentials.ts';
 import { CliError } from './errors.ts';
 import type { Command, ServerSettings } from './options.ts';
@@ -68,6 +69,11 @@ async function execute(command: Command, io: Io): Promise<CommandResult> {
   try {
     if (command.name === 'stat') {
       return await stat(command.options, pool);
+    }
+    if (command.name === 'verify') {
+      return await verify(command.options, pool, (line) => {
+        io.err(line);
+      });
     }
     return await get(command.options, pool, (line) => {
       io.err(line);

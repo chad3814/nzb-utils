@@ -44,6 +44,7 @@
     "@chad3814/nntp": "0.0.0",
     "@chad3814/nzb": "0.0.0",
     "@chad3814/nzb-parser": "0.0.0",
+    "@chad3814/par2": "0.0.0",
     "@chad3814/secret-provider": "^1.2.0",
     "@chad3814/yenc": "0.0.0"
   },

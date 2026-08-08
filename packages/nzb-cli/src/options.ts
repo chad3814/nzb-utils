@@ -105,6 +105,14 @@ export interface GetOptions {
   readonly dryRun: boolean;
 }
 
+/** `nzb verify <file.nzb>` — check downloaded files against the release's PAR2 set. */
+export interface VerifyOptions {
+  readonly nzbPath: string;
+  readonly server: ServerSettings;
+  /** Where the downloaded files are. */
+  readonly directory: string;
+}
+
 /** `nzb decode <article...>` — decode already-fetched raw articles from disk. */
 export interface DecodeOptions {
   readonly articlePaths: readonly string[];
@@ -121,4 +129,5 @@ export type Command =
   | { readonly name: 'inspect'; readonly options: InspectOptions }
   | { readonly name: 'stat'; readonly options: StatOptions }
   | { readonly name: 'get'; readonly options: GetOptions }
+  | { readonly name: 'verify'; readonly options: VerifyOptions }
   | { readonly name: 'decode'; readonly options: DecodeOptions };

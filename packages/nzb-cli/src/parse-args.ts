@@ -53,6 +53,13 @@ const OPTIONS = {
   'dot-stuffed': { type: 'boolean' },
 } as const;
 
+const COMMANDS = ['inspect', 'stat', 'get', 'verify', 'decode'] as const;
+type CommandName = (typeof COMMANDS)[number];
+
+function isCommand(name: string): name is CommandName {
+  return (COMMANDS as readonly string[]).includes(name);
+}
+
 export interface ParsedArgs {
   readonly command: Command | null;
   /** Set when `--help` or `--version` was asked for; print and exit zero. */
@@ -70,7 +77,7 @@ export async function parseCommandLine(argv: readonly string[]): Promise<ParsedA
   if (values.help === true || name === undefined) {
     return { command: null, message: help(name) };
   }
-  if (name !== 'inspect' && name !== 'stat' && name !== 'get' && name !== 'decode') {
+  if (!isCommand(name)) {
     throw new CliError(`unknown command ${JSON.stringify(name)}\n\n${help()}`);
   }
 
@@ -95,6 +102,13 @@ export async function parseCommandLine(argv: readonly string[]): Promise<ParsedA
         name,
         options: { nzbPath, server, sample: sample(values), json: values.json === true },
       },
+    };
+  }
+
+  if (name === 'verify') {
+    return {
+      message: null,
+      command: { name, options: { nzbPath, server, directory: values.out ?? '.' } },
     };
   }
 

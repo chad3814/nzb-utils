@@ -50,6 +50,7 @@ Commands:
   inspect <file.nzb>     parse and report; no network access at all
   stat    <file.nzb>     ask the server which articles are still there
   get     <file.nzb>     download whole files, or byte ranges of them
+  verify  <file.nzb>     check downloaded files against the release's PAR2 set
   decode  <article...>   decode raw articles already on disk
 
 Run 'nzb <command> --help' for the options of one command.`,
@@ -99,6 +100,22 @@ for a fraction of a percent of the bytes.
 
 Opening each file costs one article, because that is where the authoritative
 filename and size live, so --include is matched after every file is probed.
+
+${SERVER_FLAGS}`,
+
+  verify: `nzb verify <file.nzb> [options]
+
+Check files you have already downloaded against the release's own PAR2 set.
+
+  -o, --out DIR   where the downloaded files are (default .)
+
+Costs one article: the index .par2 carries the authoritative filename, length
+and MD5 of every protected file plus per-slice checksums, and verifying needs no
+recovery data, so the parity volumes are never fetched.
+
+Reports which slices are damaged, not merely that a file is wrong. Exits
+non-zero if anything is damaged or absent. Repair is not implemented; par2cmdline
+or QuickPar can use the recovery volumes if you need it.
 
 ${SERVER_FLAGS}`,
 

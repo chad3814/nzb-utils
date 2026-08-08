@@ -128,10 +128,14 @@ motivated the rewrite. Each needs a test that would fail against the original.
   because turning a 4 MiB read into a multi-gigabyte one unasked is the same class of
   surprise as `slice(0, 0)` downloading everything.
 
-Still open:
-
-- **`@chad3814/par2` scope.** Verification is genuinely useful on its own;
-  Reed-Solomon repair is a much larger job. Verification first.
+- **`@chad3814/par2` is verification only (settled 2026-08-05).** Parsing,
+  packet/file/slice checking and authoritative filenames; no Reed-Solomon. The
+  decision rested on measured facts about a real release: the index `.par2` is
+  one article and carries every name, length and MD5, while repair needs
+  gigabytes of GF(2^16) arithmetic — and on that release the recovery set
+  protected 2 files, not including the one article that had actually expired.
+  A second provider fixes more real failures than repair would. Do not add
+  repair without revisiting that trade.
 
 ## Real-world findings (2026-08-05, live run against Newshosting)
 
