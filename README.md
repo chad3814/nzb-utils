@@ -57,6 +57,10 @@ mistaken for facts. On obfuscated posts even the yEnc name is a random string,
 and the release's own PAR2 index — one article — is the only place the real name
 and an MD5 exist.
 
+**Reads are concurrent but bounded.** Articles are fetched through a sliding
+window and handed over in file order, so a download costs `prefetch × article
+size` in memory rather than the size of the range.
+
 **Slicing is a contract, not an implementation detail.** `slice()` does no I/O;
 `slice(0, 0)` is empty; nested slices clamp to their parent; segment offsets are
 predicted from segment 1 for speed and then verified against every article's own

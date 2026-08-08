@@ -174,10 +174,10 @@ So:
   its real name is unknowable precisely because it could not be opened.
 - **Progress goes to stderr, the report to stdout,** so `--json | jq` and
   `> file` both work.
-- **Articles are fetched one at a time.** Ordered output means concurrency would
-  require buffering the range. A bounded prefetch window is the obvious next
-  step; until then a large `get` runs at one article at a time regardless of
-  `--connections`, which still governs the pool.
+- **`--connections` sets both the pool size and how many articles are fetched at
+  once.** Output stays in file order; only the fetching overlaps. A download
+  therefore costs roughly `connections × article size` in memory — 32 MiB at the
+  default of 4 against a 4 MiB post — regardless of how large the file is.
 
 ## Testing
 

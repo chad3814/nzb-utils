@@ -18,7 +18,9 @@ const SERVER_FLAGS = `Server (a config file supplies the defaults; see below):
       --port N             default 563
       --security MODE      implicit | starttls | none (default implicit)
   -c, --connections N      simultaneous connections (default 4); respect your
-                           provider's cap
+                           provider's cap. Also sets how many articles are
+                           fetched at once, so a download costs roughly
+                           N x article size in memory
       --user NAME          username (not a secret, so a literal is fine)
       --pass-env NAME      read the password from this environment variable
       --pass-file PATH     read the password from this file

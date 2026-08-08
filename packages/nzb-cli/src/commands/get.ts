@@ -128,7 +128,12 @@ async function select(
   // One article, and it is what turns a subject-line guess into a real name.
   let handle: NzbFileHandle;
   try {
-    handle = await openNzbFile(file, pool, { verify: options.verify });
+    handle = await openNzbFile(file, pool, {
+      verify: options.verify,
+      // Matched to the pool: a deeper window would only queue requests the
+      // transport cannot start, while still holding their articles in memory.
+      prefetch: options.server.connections,
+    });
   } catch (error) {
     const label = file.subjectHints.name ?? file.subject;
     log(`cannot open ${label}: ${error instanceof Error ? error.message : 'failed'}`);

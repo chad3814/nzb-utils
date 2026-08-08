@@ -6,6 +6,7 @@ import { NzbGeometryError } from './errors.ts';
 import { probeGeometry, verifyPlacement } from './geometry.ts';
 import type { FileHeader } from './geometry.ts';
 import { mimeTypeFor } from './mime.ts';
+import { prefetch } from './prefetch.ts';
 import { normalizeSlice, resolveRange } from './range.ts';
 import type {
   ArticleSource,
@@ -14,6 +15,9 @@ import type {
   SegmentGeometry,
   SegmentSlice,
 } from './models.ts';
+
+/** Articles fetched at once by default: the pool's own default connection count. */
+export const DEFAULT_PREFETCH = 4;
 
 export interface OpenNzbFileOptions {
   /**
@@ -25,6 +29,21 @@ export interface OpenNzbFileOptions {
   readonly verify?: boolean;
   /** Override the MIME type inferred from the yEnc filename. */
   readonly type?: string;
+  /**
+   * How many articles may be in flight at once while reading.
+   *
+   * Chunks are still emitted in file order; this only overlaps the fetching.
+   * Bounded on purpose — the memory a read costs is roughly
+   * `prefetch × geometry.segmentSize`, so 4 articles of a 4 MiB post is 16 MiB
+   * whatever the file's size. `Promise.all` over a whole range would instead
+   * cost the size of the range, which for the file this package was built
+   * against is 7.3 GiB.
+   *
+   * There is no point setting this above the transport's connection count:
+   * the surplus requests queue in the pool and hold decoded articles while they
+   * wait. Defaults to {@link DEFAULT_PREFETCH}.
+   */
+  readonly prefetch?: number;
 }
 
 /**
@@ -47,6 +66,7 @@ export async function openNzbFile(
     file,
     source,
     verify,
+    prefetch: Math.max(1, options.prefetch ?? DEFAULT_PREFETCH),
     geometry: probe.geometry,
     header: { name: probe.name, size: probe.geometry.totalSize },
     lastModified: file.date.getTime(),
@@ -65,6 +85,8 @@ interface HandleContext {
   readonly file: NzbFile;
   readonly source: ArticleSource;
   readonly verify: boolean;
+  /** How many articles may be in flight at once. At least 1. */
+  readonly prefetch: number;
   readonly geometry: SegmentGeometry;
   readonly header: FileHeader;
   readonly lastModified: number;
@@ -179,15 +201,24 @@ class Handle implements NzbFileHandle {
     return resolveRange(this.#context.geometry, this.#window);
   }
 
-  /** Uncopied views into decoded articles. Internal: callers must not retain them. */
+  /**
+   * Uncopied views into decoded articles, in file order.
+   *
+   * Fetched through a bounded prefetch window: several articles are in flight
+   * at once, but they reach the caller strictly in order and no more than
+   * `prefetch` of them are held at a time. Fetching the whole range together
+   * would be faster still and would cost the range in memory, which is the
+   * trade this deliberately does not make.
+   *
+   * Internal: callers must not retain the views.
+   */
   async *#parts(segments: readonly SegmentSlice[]): AsyncGenerator<Uint8Array> {
-    for (const slice of segments) {
-      // Sequential on purpose. Articles must be yielded in file order, so
-      // fetching them together would mean buffering the whole range in memory
-      // -- exactly what stream() exists to avoid. Parallelism belongs one layer
-      // down, in the pool, or in a future prefetch window with a bounded depth.
-      // oxlint-disable-next-line no-await-in-loop
-      const article = await this.#articleFor(slice.number);
+    const articles = prefetch(segments, this.#context.prefetch, async (slice) => ({
+      slice,
+      article: await this.#articleFor(slice.number),
+    }));
+
+    for await (const { slice, article } of articles) {
       yield article.data.subarray(slice.offsetInSegment, slice.offsetInSegment + slice.byteLength);
     }
   }

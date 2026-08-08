@@ -143,14 +143,49 @@ Two things this surfaced that the synthetic fixtures had not:
   `STAT` confirms every other file is fully retained. Not a bug, but it is what
   attributable errors are for: the failure names the article and the reason.
 
+## Fetching is concurrent, and bounded
+
+Chunks must reach the caller in file order, so the obvious way to go faster —
+`Promise.all` over the range — is wrong twice: it buffers the whole read, and on
+a 7.3 GiB file that is 7.3 GiB of RSS. Instead `prefetch` articles are kept in
+flight, results are handed over strictly in order, and a new fetch starts only
+as an old one is consumed.
+
+```ts
+await openNzbFile(file, pool, { prefetch: 8 });
+```
+
+The cost of a read is therefore `prefetch × geometry.segmentSize` — 32 MiB for
+eight articles of a 4 MiB post — **whatever the size of the range**. Backpressure
+falls out of it being a generator: nothing beyond the window starts until the
+consumer pulls, so a slow disk throttles the network instead of filling memory.
+
+Setting it above the transport's connection count does not help. The surplus
+requests queue in the pool while still holding their decoded articles.
+
+Measured against a source with a simulated 40 ms round trip — not a real
+provider, so read it as the shape of the effect rather than a throughput figure
+— reading 16 articles takes:
+
+| `prefetch` | wall clock |
+| ---------- | ---------- |
+| 1          | 662 ms     |
+| 4          | 203 ms     |
+| 8          | 124 ms     |
+| 16         | 83 ms      |
+
+The output is byte-identical at every depth, which is the part that matters.
+
+Errors stay ordered too: with several requests in flight a later article can
+fail sooner, but what surfaces is the first failure _in the file_, because that
+is where reading actually stops being possible.
+
 ## Known limits
 
-- **Articles are fetched sequentially.** Chunks have to be emitted in file order, so
-  fetching a range concurrently would mean buffering it — which is what `stream()`
-  exists to avoid. A bounded prefetch window is the obvious next step; until then,
-  a large read runs at one article at a time regardless of the pool's size.
 - **Only segment 1 is cached**, since opening already paid for it. Re-reading any
   other range re-fetches.
+- **An abandoned read cannot cancel in-flight fetches.** `ArticleSource` has no
+  abort signal, so requests already started settle and are discarded.
 
 ## Testing
 
