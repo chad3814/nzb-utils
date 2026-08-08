@@ -3,7 +3,7 @@
 Strictly-typed NNTP client (RFC 3977, `AUTHINFO` from RFC 4643) with TLS,
 connection pooling, and dot-unstuffing.
 
-**Status: implemented, not yet published.** One runtime dependency,
+**Status: 1.0.0.** One runtime dependency,
 [`@chad3814/secret-provider`](https://github.com/chad3814/secret-provider).
 
 ```ts
@@ -13,8 +13,8 @@ import { chain, fromEnv, fromFile } from '@chad3814/secret-provider';
 const pool = new NntpPool({
   endpoint: { host: 'news.example.com', port: 563, security: 'implicit' },
   credentials: {
-    user: fromEnv('NNTP_USER'),
-    pass: chain(fromEnv('NNTP_PASS'), fromFile('/run/secrets/nntp')),
+    user: fromEnv('NNTP_USERNAME'),
+    pass: chain(fromEnv('NNTP_PASSWORD'), fromFile('/run/secret/nntp_password')),
   },
   credentialTtlMs: 15 * 60_000, // if the source issues short-lived credentials
   connections: 8,

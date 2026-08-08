@@ -25,13 +25,19 @@
       }
     },
     {
-      "files": ["scripts/**/*.ts"],
+      "files": ["scripts/**"],
       "rules": {
         // A test harness whose whole job is to print a report.
         "no-console": "off",
         // Articles are fetched one at a time on purpose: the report should name
-        // the article that failed, not a rejected batch.
-        "no-await-in-loop": "off"
+        // the article that failed, not a rejected batch. The release scripts
+        // walk a handful of package.json files, where parallelism would buy
+        // nothing and lose the ordering of their output.
+        "no-await-in-loop": "off",
+        // These are one-shot scripts that do their work and exit. Nothing
+        // shares the event loop with them, which is the case the async-first
+        // rule explicitly carves out.
+        "node/no-sync": "off"
       }
     },
     {

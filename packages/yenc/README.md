@@ -2,7 +2,7 @@
 
 Pure-TypeScript yEnc decoder with header parsing and CRC32 verification.
 
-**Status: implemented, not yet published.** Zero runtime dependencies, no native
+**Status: 1.0.0.** Zero runtime dependencies, no native
 build step.
 
 ```ts

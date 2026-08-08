@@ -2,7 +2,7 @@
 
 PAR2 (Parity Volume Set Specification 2.0) parsing and verification.
 
-**Status: implemented, not yet published.** Zero runtime dependencies —
+**Status: 1.0.0.** Zero runtime dependencies —
 `node:crypto` for MD5, `node:zlib` for CRC32.
 
 **Verification only. There is no repair.** Reed-Solomon reconstruction is a much

@@ -2,7 +2,7 @@
 
 Command-line tool to inspect NZBs and download some or all of their contents.
 
-**Status: implemented, not yet published.**
+**Status: 1.0.0.**
 
 ```sh
 nzb inspect release.nzb                      # offline; no network at all

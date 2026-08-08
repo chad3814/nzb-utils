@@ -2,7 +2,7 @@
 
 Strictly-typed parser for NZB 1.1 documents (`http://www.newzbin.com/DTD/2003/nzb`).
 
-**Status: implemented, not yet published.** Zero runtime dependencies.
+**Status: 1.0.0.** Zero runtime dependencies.
 
 ```ts
 import { parseNzb } from '@chad3814/nzb-parser';

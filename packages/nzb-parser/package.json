@@ -1,7 +1,6 @@
 {
   "name": "@chad3814/nzb-parser",
-  "version": "0.0.0",
-  "private": true,
+  "version": "1.0.0",
   "description": "Strictly-typed parser for NZB 1.1 documents",
   "keywords": [
     "nzb",
@@ -31,13 +30,15 @@
   "files": [
     "dist",
     "src",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "sideEffects": false,
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "prepack": "node ../../scripts/assert-built.mjs"
   }
 }

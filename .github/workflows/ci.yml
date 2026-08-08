@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      # Report every version's result rather than cancelling siblings on the
+      # first failure, so a Node 26 break does not mask a Node 22 break.
+      fail-fast: false
+      matrix:
+        node: ['22', '24', '26']
+
+    # 22 and 24 are LTS and gate the release; 26 is current, so a failure there
+    # is early warning rather than something that blocks merging.
+    continue-on-error: ${{ matrix.node == '26' }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      # typecheck runs `tsc -b` first, so this also proves the whole composite
+      # build works from clean before anything else depends on dist existing.
+      - run: npm run check
+
+      # The tarballs are what people actually install, and `files` is easy to
+      # get wrong in a way no test notices. Packing every workspace exercises
+      # the prepack guard too.
+      - name: Pack every workspace
+        run: npm pack --workspaces --dry-run

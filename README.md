@@ -5,9 +5,12 @@ access to NZB contents, and a CLI. Written because the existing npm packages in 
 space are either abandoned or subtly wrong, and because none of them keep credentials
 out of the libraries that don't need them.
 
-**Status: in progress.** All six packages are implemented and tested. `par2` is
-verification only — there is no Reed-Solomon repair. All packages are `private`
-until they are ready to publish.
+**Status: 1.0.0, ready to publish.** All six packages are implemented, tested and
+verified against live Usenet. `par2` is verification only — there is no
+Reed-Solomon repair.
+
+Versioned in lockstep: one version, one tag, published as a set, with internal
+dependencies as `^` ranges of that same version. See [RELEASING.md](RELEASING.md).
 
 ## Packages
 

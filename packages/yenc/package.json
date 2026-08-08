@@ -1,7 +1,6 @@
 {
   "name": "@chad3814/yenc",
-  "version": "0.0.0",
-  "private": true,
+  "version": "1.0.0",
   "description": "Pure-TypeScript yEnc decoder with header parsing and CRC32 verification",
   "keywords": [
     "yenc",
@@ -32,13 +31,15 @@
   "files": [
     "dist",
     "src",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "sideEffects": false,
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "prepack": "node ../../scripts/assert-built.mjs"
   }
 }

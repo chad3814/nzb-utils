@@ -1,8 +1,7 @@
 {
   "name": "@chad3814/par2",
-  "version": "0.0.0",
-  "private": true,
-  "description": "PAR2 (Parity Volume Set Specification 2.0) verification and repair — namespace reserved, not yet implemented",
+  "version": "1.0.0",
+  "description": "PAR2 (Parity Volume Set Specification 2.0) verification and repair \u2014 namespace reserved, not yet implemented",
   "keywords": [
     "par2",
     "parity",
@@ -31,13 +30,15 @@
   "files": [
     "dist",
     "src",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "sideEffects": false,
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "prepack": "node ../../scripts/assert-built.mjs"
   }
 }
