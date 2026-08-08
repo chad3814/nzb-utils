@@ -164,6 +164,18 @@ export async function nestedClamp(handle: NzbFileHandle): Promise<string> {
  * lines arrived dot-stuffed, which is encoder-dependent and worth knowing rather
  * than assuming.
  */
+/**
+ * How far either side of a segment boundary to compare.
+ *
+ * Scaled to the segment rather than a fixed 1 MiB. Article sizes vary
+ * enormously — 4 MiB on one release, 330 KB on a magazine post — and a
+ * hardcoded window goes negative on the small ones, where `subarray` silently
+ * counts from the end and compares two unrelated stretches of the file.
+ */
+function reachFor(segmentSize: number): number {
+  return Math.min(MIB, Math.floor(segmentSize / 2));
+}
+
 export async function boundaryJoin(
   file: NzbFile,
   pool: NntpPool,
@@ -199,13 +211,17 @@ export async function boundaryJoin(
 
   // Segment 2 is [size, 2*size) and segment 3 is [2*size, 3*size), so the
   // boundary between them is at 2*size.
-  const joined = Buffer.concat([second.subarray(size - MIB), third.subarray(0, MIB)]);
-  const sliced = Buffer.from(await handle.slice(2 * size - MIB, 2 * size + MIB).bytes());
+  const reach = reachFor(size);
+  const joined = Buffer.concat([second.subarray(size - reach), third.subarray(0, reach)]);
+  const sliced = Buffer.from(await handle.slice(2 * size - reach, 2 * size + reach).bytes());
 
   if (!sliced.equals(joined)) {
     throw new Error('slice across the 2|3 boundary differs from the articles joined by hand');
   }
-  return `${mib(sliced.length)} across the 2|3 boundary matches; ${String(stuffed)} of ${String(lines)} lines arrived dot-stuffed`;
+  return (
+    `${mib(sliced.length)} across the 2|3 boundary matches; ` +
+    `${String(stuffed)} of ${String(lines)} lines arrived dot-stuffed`
+  );
 }
 
 /**

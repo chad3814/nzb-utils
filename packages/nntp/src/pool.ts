@@ -1,7 +1,7 @@
 import { memoizeCredentials } from './auth.ts';
 import type { CredentialProviders } from './auth.ts';
 import { NntpClient } from './client.ts';
-import { NntpConnectionError } from './errors.ts';
+import { NntpCapacityError, NntpConnectionError } from './errors.ts';
 import type { NntpArticleResponse, NntpCredentials, NntpEndpoint, NntpResponse } from './models.ts';
 
 export interface NntpPoolOptions {
@@ -58,7 +58,7 @@ export interface NntpConnectionFailure {
  */
 export class NntpPool {
   readonly #endpoint: NntpEndpoint;
-  readonly #limit: number;
+  #limit: number;
   readonly #timeoutMs: number | undefined;
   /**
    * Held to authenticate new connections; never exposed.
@@ -146,10 +146,31 @@ export class NntpPool {
       } catch (error) {
         this.#open -= 1;
         this.#record(error);
+
+        if (error instanceof NntpCapacityError && this.#open > 0) {
+          // The provider's cap is lower than the one configured. That is a fact
+          // about the account, not a failure of this request: shrink to what
+          // the server will actually give us and wait for a live connection
+          // rather than failing work that is perfectly fetchable. Propagating
+          // here is what turned "-c 8 on a 4-connection account" into six of
+          // eight files reported unavailable.
+          this.#limit = this.#open;
+          return this.#waitForConnection();
+        }
+
         throw error;
       }
     }
 
+    return this.#waitForConnection();
+  }
+
+  /** Effective connection limit, which may be below the configured one. */
+  get limit(): number {
+    return this.#limit;
+  }
+
+  #waitForConnection(): Promise<NntpClient> {
     return new Promise<NntpClient>((resolve) => {
       this.#waiting.push(resolve);
     });

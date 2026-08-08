@@ -1,7 +1,7 @@
 import { fromStatic, memoize } from '@chad3814/secret-provider';
 import type { Provider } from '@chad3814/secret-provider';
 
-import { NntpAuthError, NntpCredentialError } from './errors.ts';
+import { NntpAuthError, NntpCapacityError, NntpCredentialError } from './errors.ts';
 import { NNTP_STATUS } from './models.ts';
 import type { NntpCredentials, NntpResponse, NntpSecret } from './models.ts';
 
@@ -99,7 +99,7 @@ export async function runAuthInfo(
     return user;
   }
   if (user.code !== NNTP_STATUS.passwordRequired) {
-    throw new NntpAuthError(user.code, user.message);
+    throw refusal(user.code, user.message);
   }
 
   const pass = await send(
@@ -107,10 +107,23 @@ export async function runAuthInfo(
     'AUTHINFO PASS',
   );
   if (pass.code !== NNTP_STATUS.authenticationAccepted) {
-    throw new NntpAuthError(pass.code, pass.message);
+    throw refusal(pass.code, pass.message);
   }
 
   return pass;
+}
+
+/**
+ * Tell "your credentials are wrong" from "you cannot have this connection".
+ *
+ * `502` is the code providers return at their simultaneous-connection cap. It
+ * is not an authentication failure, and reporting it as one sends people to
+ * rotate a password that was never the problem.
+ */
+function refusal(code: number, message: string): Error {
+  return code === NNTP_STATUS.permissionDenied
+    ? new NntpCapacityError(code, message)
+    : new NntpAuthError(code, message);
 }
 
 /**

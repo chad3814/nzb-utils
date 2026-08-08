@@ -163,16 +163,22 @@ consumer pulls, so a slow disk throttles the network instead of filling memory.
 Setting it above the transport's connection count does not help. The surplus
 requests queue in the pool while still holding their decoded articles.
 
-Measured against a source with a simulated 40 ms round trip — not a real
-provider, so read it as the shape of the effect rather than a throughput figure
-— reading 16 articles takes:
+Measured against a real provider, fetching a 6.28 MiB / 20-article file:
 
-| `prefetch` | wall clock |
-| ---------- | ---------- |
-| 1          | 662 ms     |
-| 4          | 203 ms     |
-| 8          | 124 ms     |
-| 16         | 83 ms      |
+| depth | wall clock | throughput |
+| ----- | ---------- | ---------- |
+| 1     | 12.85 s    | 0.49 MiB/s |
+| 2     | 7.58 s     | 0.83 MiB/s |
+| 4     | 6.70 s     | 0.94 MiB/s |
+| 8     | 6.87 s     | 0.91 MiB/s |
+
+**About 1.9x, and it stops improving at 4.** Worth stating plainly, because an
+isolated benchmark flatters this: against a source with a simulated 40 ms round
+trip and no bandwidth limit, the same code scales nearly linearly to 16. Real
+fetching stops being latency-bound once a few requests overlap and becomes
+bandwidth-bound, and going deeper then buys nothing — it only holds more
+articles in memory. Depth beyond the provider's connection cap buys less than
+nothing.
 
 The output is byte-identical at every depth, which is the part that matters.
 

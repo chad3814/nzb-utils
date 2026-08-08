@@ -5,6 +5,7 @@ export { unstuff } from './response-buffer.ts';
 export type { NntpConnectionFailure, NntpPoolOptions } from './pool.ts';
 export {
   NntpAuthError,
+  NntpCapacityError,
   NntpConnectionError,
   NntpCredentialError,
   NntpProtocolError,

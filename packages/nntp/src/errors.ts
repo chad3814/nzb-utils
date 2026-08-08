@@ -59,6 +59,30 @@ export class NntpCredentialError extends Error {
   }
 }
 
+/**
+ * The server refused to give us this connection.
+ *
+ * Distinct from {@link NntpAuthError} because the remedy is different and the
+ * confusion is expensive: providers answer `AUTHINFO` with `502` when the
+ * account is at its simultaneous-connection cap, and a client that calls that
+ * "authentication failed" sends people to check a password that is perfectly
+ * correct. RFC 3977 separates them too — `481` is a rejected credential, `502`
+ * is the command being unavailable to you.
+ *
+ * Transient by nature: the same credentials on the same server will work again
+ * once a connection frees up, which is why {@link NntpPool} treats it as a cap
+ * to respect rather than a failure to propagate.
+ */
+export class NntpCapacityError extends Error {
+  readonly code: number;
+
+  constructor(code: number, message: string) {
+    super(`NNTP ${code}: ${message}`);
+    this.name = 'NntpCapacityError';
+    this.code = code;
+  }
+}
+
 /** A command produced no complete response within the configured timeout. */
 export class NntpTimeoutError extends Error {
   readonly timeoutMs: number;

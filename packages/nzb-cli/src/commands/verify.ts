@@ -36,7 +36,7 @@ export async function verify(
   log: Log,
 ): Promise<CommandResult> {
   const nzb = parse(await read(options.nzbPath), options.nzbPath);
-  const set = await loadSet(nzb.files, pool, log);
+  const { set, volumes } = await loadSet(nzb.files, pool, log);
 
   const rows: string[][] = [['STATUS', 'SIZE', 'SLICES', 'NAME']];
   let bad = 0;
@@ -58,16 +58,23 @@ export async function verify(
     `${plural(set.files.length, 'protected file')}, ` +
       `${String(set.files.length - bad - missing)} verified, ` +
       `${String(bad)} damaged, ${String(missing)} absent`,
-    `slice size ${bytes(set.sliceSize)}, ${plural(set.recoverySlices, 'recovery slice')} in the set` +
+    // "in the volumes read", not "in the set": only the index is fetched, and
+    // the index carries no parity at all. Reporting 0 as a property of the set
+    // would say a release has no recovery data when it has hundreds of
+    // megabytes of it, sitting in files this command deliberately did not read.
+    `slice size ${bytes(set.sliceSize)}, ${plural(set.recoverySlices, 'recovery slice')} ` +
+      `in the ${plural(volumes, 'volume')} read` +
       (set.creator === null ? '' : `, created by ${set.creator}`),
   ];
 
-  if (set.recoverySlices > 0 && bad > 0) {
-    // Saying what could be done, without pretending this can do it.
+  if (bad > 0) {
+    // Saying what could be done, without pretending this can do it -- and
+    // without claiming to know how much parity exists, since the volumes that
+    // hold it were deliberately not fetched.
     lines.push(
       '',
-      'This set carries recovery data, but repairing needs Reed-Solomon, which ' +
-        'this tool does not implement. par2cmdline or QuickPar can use it.',
+      'Repairing needs Reed-Solomon, which this tool does not implement. If the ' +
+        'release has vol*.par2 files, par2cmdline or QuickPar can use them.',
     );
   }
 
@@ -89,7 +96,11 @@ function describe(damaged: number, lengthMatches: boolean): string {
  * loop exists because a set whose index is missing can still be reconstructed
  * from any volume, since critical packets are duplicated into all of them.
  */
-async function loadSet(files: readonly NzbFile[], pool: NntpPool, log: Log): Promise<Par2Set> {
+async function loadSet(
+  files: readonly NzbFile[],
+  pool: NntpPool,
+  log: Log,
+): Promise<{ set: Par2Set; volumes: number }> {
   const candidates = files
     .filter((file) => (file.subjectHints.name ?? '').toLowerCase().endsWith('.par2'))
     .toSorted((a, b) => a.totalEncodedBytes - b.totalEncodedBytes);
@@ -106,7 +117,7 @@ async function loadSet(files: readonly NzbFile[], pool: NntpPool, log: Log): Pro
     try {
       const handle = await openNzbFile(candidate, pool);
       volumes.push(Buffer.from(await handle.bytes()));
-      return parsePar2(...volumes);
+      return { set: parsePar2(...volumes), volumes: volumes.length };
     } catch (error) {
       // A missing or unreadable volume is not fatal while others remain: that
       // redundancy is the reason critical packets are in every one of them.

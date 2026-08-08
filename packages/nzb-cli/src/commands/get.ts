@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { NntpCapacityError } from '@chad3814/nntp';
 import type { NntpPool } from '@chad3814/nntp';
 import { openNzbFile } from '@chad3814/nzb';
 import type { NzbFileHandle } from '@chad3814/nzb';
@@ -125,19 +126,8 @@ async function select(
   log: Log,
   unopenable: string[],
 ): Promise<Selected | null> {
-  // One article, and it is what turns a subject-line guess into a real name.
-  let handle: NzbFileHandle;
-  try {
-    handle = await openNzbFile(file, pool, {
-      verify: options.verify,
-      // Matched to the pool: a deeper window would only queue requests the
-      // transport cannot start, while still holding their articles in memory.
-      prefetch: options.server.connections,
-    });
-  } catch (error) {
-    const label = file.subjectHints.name ?? file.subject;
-    log(`cannot open ${label}: ${error instanceof Error ? error.message : 'failed'}`);
-    unopenable.push(label);
+  const handle = await probe(file, options, pool, log, unopenable);
+  if (handle === null) {
     return null;
   }
 
@@ -166,6 +156,38 @@ async function select(
       0,
     ),
   };
+}
+
+/** Open a file, or record it as unopenable and move on. */
+async function probe(
+  file: NzbFile,
+  options: GetOptions,
+  pool: NntpPool,
+  log: Log,
+  unopenable: string[],
+): Promise<NzbFileHandle | null> {
+  try {
+    // One article, and it is what turns a subject-line guess into a real name.
+    return await openNzbFile(file, pool, {
+      verify: options.verify,
+      // Matched to the pool: a deeper window would only queue requests the
+      // transport cannot start, while still holding their articles in memory.
+      prefetch: options.server.connections,
+    });
+  } catch (error) {
+    // A capacity refusal says nothing about this file -- the provider is simply
+    // full, and the same request will work later. Skipping would report a
+    // perfectly available file as missing, which is what happened against a
+    // real server before the pool learned to shrink to the allowed limit.
+    if (error instanceof NntpCapacityError) {
+      throw error;
+    }
+
+    const label = file.subjectHints.name ?? file.subject;
+    log(`cannot open ${label}: ${error instanceof Error ? error.message : 'failed'}`);
+    unopenable.push(label);
+    return null;
+  }
 }
 
 function apply(handle: NzbFileHandle, range: RangeOption | null): NzbFileHandle {

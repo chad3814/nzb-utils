@@ -173,6 +173,30 @@ Credentials for these runs come from 1Password via
 `op run --env-file=... -- node ...`, so they never enter a transcript, a file, or
 a shell history. Never read them any other way.
 
+## Real-world findings (2026-08-08, Linux Journal Aug 2017 post)
+
+A second live post, deliberately small enough to fetch whole — 8 files, 27
+articles, 7.2 MiB, non-obfuscated names, posted 2017.
+
+- **26 of 27 articles survived nine years.** Retention is better than assumed;
+  the one gone article is a `.nfo` whose posting date differs from the rest.
+- **A complete download verified against par2**: 20 articles reassembled into a
+  6,588,808-byte PDF, all 100 slices and the whole-file MD5 matching what
+  par2cmdline computed in 2017. That is the whole stack checked against a
+  third-party authority, which the 7.9 GiB fixture made impractical.
+- **`502 Too many connections` is not an auth failure.** Newshosting returns it
+  at the account's connection cap. It was being reported as `NntpAuthError`,
+  which sends people to rotate a working password; there is now
+  `NntpCapacityError`, and the pool shrinks to the cap rather than failing.
+- **Concurrency is worth ~1.9x, plateauing at 4 connections** on a real link —
+  far less than an isolated latency benchmark suggests, because real fetching
+  becomes bandwidth-bound once a few requests overlap. Do not quote the
+  synthetic figure.
+- **Segment sizes vary by orders of magnitude**: 4 MiB on the 2160p release,
+  337 KB here. Anything that assumes a segment is at least 1 MiB is wrong —
+  `scripts/checks.ts` had exactly that bug and compared unrelated stretches of
+  file because a negative `subarray` index counts from the end.
+
 ## Test fixtures
 
 Synthetic only, for now. Fixtures are hand-authored NZB documents covering one
