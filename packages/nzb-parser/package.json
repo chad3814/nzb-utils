@@ -1,6 +1,6 @@
 {
   "name": "@chad3814/nzb-parser",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Strictly-typed parser for NZB 1.1 documents",
   "keywords": [
     "nzb",

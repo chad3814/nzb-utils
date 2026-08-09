@@ -1,7 +1,7 @@
 {
   "name": "@chad3814/par2",
-  "version": "1.0.0",
-  "description": "PAR2 (Parity Volume Set Specification 2.0) verification and repair \u2014 namespace reserved, not yet implemented",
+  "version": "1.1.0",
+  "description": "PAR2 (Parity Volume Set Specification 2.0) verification and repair — namespace reserved, not yet implemented",
   "keywords": [
     "par2",
     "parity",
