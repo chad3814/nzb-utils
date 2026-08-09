@@ -81,10 +81,41 @@ on always picking that strategy, bump and tag as two separate steps.
    yet exist. Nothing enforces this; npm does not check that a dependency is
    published. It only matters for the minutes between approvals.
 
-## First release: trusted publishers
+## First release: the bootstrap
 
-Each package needs its own trusted publisher on npmjs.com before the first
-publish can work, all four fields identical apart from the package name:
+There is a chicken-and-egg here, and it has to be broken by hand exactly once.
+
+A trusted publisher is configured from a package's **settings page on
+npmjs.com**, which only exists once the package does. A repository that
+publishes purely over OIDC therefore cannot publish its own first version:
+`publish.yml` has no token, and npm will not authenticate it for a name it has
+never seen. Something has to create the six names first.
+
+### 1. Publish placeholders
+
+```sh
+npm run bootstrap              # dry run: lists what it would publish
+npm run bootstrap -- --publish # prompts for 2FA per package
+```
+
+This publishes an empty `0.0.1` for each name — `package.json` and a README
+saying what it is, no code — under the **`placeholder` dist-tag rather than
+`latest`**, and deprecates it.
+
+The tag matters. A package whose only version is tagged `placeholder` has no
+`latest`, so `npm install @chad3814/nzb` fails outright rather than quietly
+handing someone an empty stub during the window between creating the names and
+approving the real release. That window is however long steps 2 and 3 take.
+
+These six versions are permanent: npm only allows unpublishing within 72 hours,
+and only when nothing depends on them. That is the accepted cost of keeping
+`1.0.0` a real, fully attested release rather than one published from a laptop
+without provenance.
+
+### 2. Configure the trusted publishers
+
+Once the names exist, add a trusted publisher to each of the six on npmjs.com.
+All fields are identical apart from which package you are on:
 
 | Field       | Value                           |
 | ----------- | ------------------------------- |
@@ -97,3 +128,24 @@ release it without a human 2FA challenge.
 
 The workflow filename is load-bearing: renaming `publish.yml` breaks OIDC auth
 for all six packages until every trusted publisher is reconfigured to match.
+
+### 3. Release 1.0.0
+
+Follow the normal steps above, starting at the tag — the version is already
+`1.0.0` in the tree, so there is nothing to bump for the first release.
+
+Once `1.0.0` is approved it becomes `latest` on all six, and the `placeholder`
+tag can be dropped:
+
+```sh
+for p in nzb-parser yenc nntp nzb par2 nzb-cli; do
+  npm dist-tag rm "@chad3814/$p" placeholder
+done
+```
+
+## Adding a package later
+
+A new package in an already-published set hits the same problem for its one
+name. `npm run bootstrap -- --publish` skips anything npm already knows about,
+so it can be run again to create just the new one, after which it needs its own
+trusted publisher before the next release will stage.

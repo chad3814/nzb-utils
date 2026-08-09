@@ -27,7 +27,8 @@
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test",
     "smoke": "npm run build && node scripts/smoke.ts",
     "version:set": "node scripts/set-version.mjs",
-    "tag": "node -e \"const v=require('./packages/nzb/package.json').version;require('node:child_process').execFileSync('git',['tag','-s',`v${v}`,'-m',`v${v}`],{stdio:'inherit'})\""
+    "tag": "node -e \"const v=require('./packages/nzb/package.json').version;require('node:child_process').execFileSync('git',['tag','-s',`v${v}`,'-m',`v${v}`],{stdio:'inherit'})\"",
+    "bootstrap": "node scripts/bootstrap-package.mjs"
   },
   "devDependencies": {
     "@chad3814/secret-provider": "^1.2.0",
