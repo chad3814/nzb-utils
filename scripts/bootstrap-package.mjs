@@ -27,8 +27,13 @@
  * This is also what to run when adding a *new* package to an already-published
  * set, which hits the same problem for that one name.
  *
+ * Run it again after the real release and it finishes the job: names that
+ * already exist are skipped for publishing, still deprecated if they are not
+ * yet, and their `placeholder` dist-tag is dropped once a real version owns
+ * `latest`. Both are idempotent, so there is no harm in running it twice.
+ *
  * Dry run by default. Pass --publish to actually do it; npm's own 2FA challenge
- * is the real gate.
+ * is the real gate — which is also why every write below inherits stdio.
  */
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
@@ -47,6 +52,21 @@ const wanted = args.filter((arg) => !arg.startsWith('--'));
 
 function npm(argv, options = {}) {
   return execFileSync('npm', argv, { encoding: 'utf8', stdio: 'pipe', ...options });
+}
+
+/**
+ * Whether a dist-tag is currently set on a package.
+ *
+ * Via `npm view`, not `npm dist-tag ls --json`: the latter ignores `--json` and
+ * prints `key: value` lines regardless, so parsing it silently reports that no
+ * tag exists and the cleanup quietly does nothing.
+ */
+function hasTag(name, tag) {
+  try {
+    return JSON.parse(npm(['view', name, 'dist-tags', '--json']))[tag] !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 function exists(name, version) {
@@ -139,7 +159,16 @@ if (!publish) {
     process.stdout.write(`would publish ${pkg.name}@${VERSION} --tag ${TAG}\n`);
   }
   for (const pkg of packages.filter((p) => !toPublish.includes(p))) {
-    process.stdout.write(`${pkg.name} already exists — would deprecate ${VERSION} if present\n`);
+    const notes = [];
+    if (exists(pkg.name, VERSION)) {
+      notes.push(`deprecate ${VERSION}`);
+    }
+    if (hasTag(pkg.name, TAG)) {
+      notes.push(`drop the ${TAG} tag`);
+    }
+    process.stdout.write(
+      `${pkg.name} already exists — would ${notes.length > 0 ? notes.join(' and ') : 'do nothing'}\n`,
+    );
   }
   process.stdout.write('\ndry run — pass --publish to do it for real\n');
   process.exit(0);
@@ -186,6 +215,21 @@ for (const pkg of packages) {
       `${pkg.name}: deprecate failed — ${error instanceof Error ? error.message.split('\n')[0] : ''}`,
     );
   }
+
+  // Only once something other than the placeholder owns `latest`. Dropping the
+  // tag while the stub is still the newest version would leave the package
+  // with nothing but an undiscoverable 0.0.1.
+  const latest = npm(['view', pkg.name, 'dist-tags.latest']).trim();
+  if (hasTag(pkg.name, TAG) && latest !== '' && latest !== VERSION) {
+    try {
+      execFileSync('npm', ['dist-tag', 'rm', pkg.name, TAG], { stdio: 'inherit' });
+      process.stdout.write(`dropped ${TAG} from ${pkg.name}\n`);
+    } catch (error) {
+      failures.push(
+        `${pkg.name}: could not drop the ${TAG} tag — ${error instanceof Error ? error.message.split('\n')[0] : ''}`,
+      );
+    }
+  }
 }
 
 if (failures.length > 0) {
@@ -198,5 +242,5 @@ if (failures.length > 0) {
   );
   process.exitCode = 1;
 } else {
-  process.stdout.write('\nall placeholders published and deprecated\n');
+  process.stdout.write('\nplaceholders are deprecated and their tags are cleared\n');
 }

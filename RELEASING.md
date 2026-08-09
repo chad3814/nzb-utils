@@ -155,14 +155,17 @@ done
 Follow the normal steps above, starting at the tag — the version is already
 `1.0.0` in the tree, so there is nothing to bump for the first release.
 
-Once `1.0.0` is approved it becomes `latest` on all six, and the `placeholder`
-tag can be dropped:
+Once the release is approved and `latest` points at it, run the bootstrap once
+more to finish the placeholder lifecycle:
 
 ```sh
-for p in nzb-parser yenc nntp nzb par2 nzb-cli; do
-  npm dist-tag rm "@chad3814/$p" placeholder
-done
+npm run bootstrap -- --publish
 ```
+
+Nothing is published — every name already exists — but it deprecates any
+placeholder that is not yet deprecated and drops the `placeholder` dist-tag now
+that a real version owns `latest`. Both steps are idempotent, and both prompt
+for authentication, which is why this cannot be folded into the workflow.
 
 ## Adding a package later
 
