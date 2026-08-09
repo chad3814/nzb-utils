@@ -140,6 +140,16 @@ release it without a human 2FA challenge.
 The workflow filename is load-bearing: renaming `publish.yml` breaks OIDC auth
 for all six packages until every trusted publisher is reconfigured to match.
 
+If deprecation fails, it is not worth blocking on. The placeholders stop
+mattering the moment `1.0.0` publishes and takes over `latest`; deprecating them
+afterwards is cosmetic and can be done any time:
+
+```sh
+for p in nzb-parser yenc nntp nzb par2 nzb-cli; do
+  npm deprecate "@chad3814/$p@0.0.1" 'Placeholder reserving the name; contains no code. Use 1.0.0 or later.'
+done
+```
+
 ### 3. Release 1.0.0
 
 Follow the normal steps above, starting at the tag — the version is already

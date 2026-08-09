@@ -168,11 +168,18 @@ for (const pkg of packages) {
   }
 
   try {
-    npm([
-      'deprecate',
-      `${pkg.name}@${VERSION}`,
-      'Placeholder reserving the name; contains no code. Use 1.0.0 or later.',
-    ]);
+    // Inherited stdio, like publish: `npm deprecate` is a write operation and
+    // asks for proof of presence. Piping its stdio leaves npm with nowhere to
+    // prompt, and it fails every time -- which is exactly what happened here.
+    execFileSync(
+      'npm',
+      [
+        'deprecate',
+        `${pkg.name}@${VERSION}`,
+        'Placeholder reserving the name; contains no code. Use 1.0.0 or later.',
+      ],
+      { stdio: 'inherit' },
+    );
     process.stdout.write(`deprecated ${pkg.name}@${VERSION}\n`);
   } catch (error) {
     failures.push(
