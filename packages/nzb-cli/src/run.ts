@@ -1,6 +1,7 @@
 import { NntpPool } from '@chad3814/nntp';
 import { ProviderError } from '@chad3814/secret-provider';
 
+import { completion } from './commands/completion.ts';
 import { decode } from './commands/decode.ts';
 import { get } from './commands/get.ts';
 import type { CommandResult } from './commands/get.ts';
@@ -63,6 +64,9 @@ async function execute(command: Command, io: Io): Promise<CommandResult> {
   }
   if (command.name === 'decode') {
     return { text: await decode(command.options), failed: false };
+  }
+  if (command.name === 'completion') {
+    return { text: completion(command.options.shell), failed: false };
   }
 
   const pool = connect(command.options.server);

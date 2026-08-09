@@ -9,6 +9,8 @@
  * it is needed and never written anywhere.
  */
 
+import type { Shell } from './spec.ts';
+
 /**
  * Where one secret comes from. Deliberately not the secret itself.
  *
@@ -113,6 +115,11 @@ export interface VerifyOptions {
   readonly directory: string;
 }
 
+/** `nzb completion <shell>` — print a shell completion script. */
+export interface CompletionOptions {
+  readonly shell: Shell;
+}
+
 /** `nzb decode <article...>` — decode already-fetched raw articles from disk. */
 export interface DecodeOptions {
   readonly articlePaths: readonly string[];
@@ -130,4 +137,5 @@ export type Command =
   | { readonly name: 'stat'; readonly options: StatOptions }
   | { readonly name: 'get'; readonly options: GetOptions }
   | { readonly name: 'verify'; readonly options: VerifyOptions }
+  | { readonly name: 'completion'; readonly options: CompletionOptions }
   | { readonly name: 'decode'; readonly options: DecodeOptions };

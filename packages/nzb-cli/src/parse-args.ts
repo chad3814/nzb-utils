@@ -11,6 +11,8 @@ import type {
   ServerSettings,
 } from './options.ts';
 import { help, VERSION } from './help.ts';
+import { COMMAND_NAMES, isShell, SHELLS } from './spec.ts';
+import type { Shell } from './spec.ts';
 import { parseRange } from './range.ts';
 
 /**
@@ -53,11 +55,13 @@ const OPTIONS = {
   'dot-stuffed': { type: 'boolean' },
 } as const;
 
-const COMMANDS = ['inspect', 'stat', 'get', 'verify', 'decode'] as const;
-type CommandName = (typeof COMMANDS)[number];
+/** Every flag the parser accepts. Exported so `spec.ts` can be checked against it. */
+export const OPTION_NAMES: readonly string[] = Object.keys(OPTIONS);
+
+type CommandName = 'inspect' | 'stat' | 'get' | 'verify' | 'decode' | 'completion';
 
 function isCommand(name: string): name is CommandName {
-  return (COMMANDS as readonly string[]).includes(name);
+  return COMMAND_NAMES.includes(name);
 }
 
 export interface ParsedArgs {
@@ -87,32 +91,47 @@ export async function parseCommandLine(argv: readonly string[]): Promise<ParsedA
     return { message: null, command: { name, options: decodeOptions(values, rest) } };
   }
 
+  if (name === 'completion') {
+    return { message: null, command: { name, options: { shell: onlyShell(rest) } } };
+  }
+
   const nzbPath = onlyNzb(name, rest);
 
   if (name === 'inspect') {
     return { message: null, command: { name, options: { nzbPath, json: values.json === true } } };
   }
 
+  // Everything past here opens a connection, so the config is only read once a
+  // command that needs it has been named -- `nzb inspect` works with none.
   const server = resolveServer(await loadConfig(values.config), overrides(values));
+  return { message: null, command: connected(name, values, nzbPath, server) };
+}
 
+/** The three commands that need a server, once one has been resolved. */
+function connected(
+  name: 'stat' | 'verify' | 'get',
+  values: Values,
+  nzbPath: string,
+  server: ServerSettings,
+): Command {
   if (name === 'stat') {
     return {
-      message: null,
-      command: {
-        name,
-        options: { nzbPath, server, sample: sample(values), json: values.json === true },
-      },
+      name,
+      options: { nzbPath, server, sample: sample(values), json: values.json === true },
     };
   }
-
   if (name === 'verify') {
-    return {
-      message: null,
-      command: { name, options: { nzbPath, server, directory: values.out ?? '.' } },
-    };
+    return { name, options: { nzbPath, server, directory: values.out ?? '.' } };
   }
+  return { name, options: getOptions(values, nzbPath, server) };
+}
 
-  return { message: null, command: { name, options: getOptions(values, nzbPath, server) } };
+function onlyShell(rest: readonly string[]): Shell {
+  const shell = rest[0];
+  if (shell === undefined || !isShell(shell)) {
+    throw new CliError(`nzb completion: name a shell — one of ${SHELLS.join(', ')}`);
+  }
+  return shell;
 }
 
 function onlyNzb(name: string, rest: readonly string[]): string {

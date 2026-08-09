@@ -69,7 +69,11 @@
         // A test is a script: it awaits one step, asserts, then awaits the
         // next. Hoisting those into Promise.all to satisfy the rule would make
         // a failure report a rejected batch instead of the step that broke.
-        "no-await-in-loop": "off"
+        "no-await-in-loop": "off",
+        // Same reasoning as scripts/: a test does its work and exits, nothing
+        // shares its event loop, and `execFileSync('bash', ...)` reads far
+        // better in an assertion than a promise would.
+        "node/no-sync": "off"
       }
     }
   ]

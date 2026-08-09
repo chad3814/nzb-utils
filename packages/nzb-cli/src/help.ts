@@ -54,6 +54,7 @@ Commands:
   get     <file.nzb>     download whole files, or byte ranges of them
   verify  <file.nzb>     check downloaded files against the release's PAR2 set
   decode  <article...>   decode raw articles already on disk
+  completion <shell>     print a shell completion script (bash, zsh, fish)
 
 Run 'nzb <command> --help' for the options of one command.`,
 
@@ -120,6 +121,20 @@ non-zero if anything is damaged or absent. Repair is not implemented; par2cmdlin
 or QuickPar can use the recovery volumes if you need it.
 
 ${SERVER_FLAGS}`,
+
+  completion: `nzb completion <bash|zsh|fish>
+
+Print a completion script to stdout. Offline, and needs no config.
+
+  bash   nzb completion bash > /usr/local/etc/bash_completion.d/nzb
+  zsh    nzb completion zsh > "\${fpath[1]}/_nzb"
+  fish   nzb completion fish > ~/.config/fish/completions/nzb.fish
+
+Or source it directly from your profile: source <(nzb completion bash).
+
+The script is generated from the same table the parser uses, so it offers the
+flags each command actually accepts rather than a hand-maintained copy that
+drifts.`,
 
   decode: `nzb decode <article...> [options]
 

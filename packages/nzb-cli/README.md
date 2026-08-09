@@ -75,6 +75,29 @@ decoders do not remove. Parts of one file go into a sparse file at their true
 offsets, so decoding articles 1 and 1868 yields a correctly-sized file with both
 pieces in place rather than 8 MiB of concatenation.
 
+## Shell completion
+
+```sh
+nzb completion bash > /usr/local/etc/bash_completion.d/nzb
+nzb completion zsh  > "${fpath[1]}/_nzb"
+nzb completion fish > ~/.config/fish/completions/nzb.fish
+```
+
+Or `source <(nzb completion bash)` from a profile. The command is offline and
+needs no config, so it works immediately after install.
+
+It completes subcommands, the flags each one actually accepts — `nzb inspect`
+offers three, `nzb get` eighteen — `.nzb` files where an NZB is expected,
+directories for `--out`, and the fixed choices for `--security`. zsh and fish
+also show the descriptions.
+
+The scripts are generated from the same table the parser uses, and a test
+asserts the two agree, because completion that disagrees with the parser is
+worse than none: it offers flags that do not exist and hides ones that do,
+silently. The bash script is driven through real bash in the test suite rather
+than string-matched, which is what catches a script that generates fine and then
+fails to parse.
+
 ## Credentials are never command-line arguments
 
 argv is readable by every process on the machine through `ps`, and lands in
