@@ -99,13 +99,24 @@ npm run bootstrap -- --publish # prompts for 2FA per package
 ```
 
 This publishes an empty `0.0.1` for each name — `package.json` and a README
-saying what it is, no code — under the **`placeholder` dist-tag rather than
-`latest`**, and deprecates it.
+saying what it is, no code — and then deprecates each one.
 
-The tag matters. A package whose only version is tagged `placeholder` has no
-`latest`, so `npm install @chad3814/nzb` fails outright rather than quietly
-handing someone an empty stub during the window between creating the names and
-approving the real release. That window is however long steps 2 and 3 take.
+**The deprecation is the protection, and it is not optional.** `--tag
+placeholder` does _not_ keep the stub out of `latest`: the first version
+published to a new package becomes `latest` whatever `--tag` says. Verified the
+hard way — `npm publish --tag placeholder` on a fresh name produced
+`placeholder: 0.0.1` _and_ `latest: 0.0.1`. So during the window between
+creating the names and approving the real release — however long steps 2 and 3
+take — a plain `npm install @chad3814/nzb` resolves the stub, and the
+deprecation warning is the only thing saying so.
+
+That is also why the script works in two phases. Deprecating immediately after
+publishing fails with a `404`: the registry will not answer for a package it has
+only just accepted. Everything is published first, then each name is polled
+until it is readable, then deprecated. A failure in either phase is collected
+rather than thrown, so one bad name cannot cost the others their turn, and
+re-running is safe — published names are skipped and `npm deprecate` is
+idempotent.
 
 These six versions are permanent: npm only allows unpublishing within 72 hours,
 and only when nothing depends on them. That is the accepted cost of keeping
