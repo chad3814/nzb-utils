@@ -50,6 +50,6 @@
     "@chad3814/yenc": "^1.0.0"
   },
   "bin": {
-    "nzb": "./dist/bin.js"
+    "nzb": "dist/bin.js"
   }
 }

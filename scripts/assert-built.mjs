@@ -52,10 +52,10 @@ async function main() {
   // work, which is exactly the question being asked.
   let build;
   try {
-    build = await stat(join(root, 'dist', '.tsbuildinfo'));
+    build = await stat(join(root, '.tsbuildinfo'));
   } catch {
     throw new Error(
-      `${name}: dist/.tsbuildinfo is missing, so there is no evidence this was built. ` +
+      `${name}: .tsbuildinfo is missing, so there is no evidence this was built. ` +
         'Run `npm run build` at the repo root.',
     );
   }
