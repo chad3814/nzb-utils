@@ -19,6 +19,21 @@ export interface ArticleBody {
    * silently corrupt output.
    */
   readonly body: Buffer;
+  /** Which server supplied this, for sources that have more than one. */
+  readonly server?: string;
+}
+
+/**
+ * Narrowing a request away from sources already tried for this article.
+ *
+ * Declared here rather than imported from `@chad3814/nntp`: this package
+ * depends on `nzb-parser` and `yenc` and nothing else, and the seam is
+ * structural on purpose so a cache or a fixture can satisfy it without taking a
+ * dependency on the transport.
+ */
+export interface ArticleFetchOptions {
+  /** Names of sources already tried, from {@link ArticleBody.server}. */
+  readonly exclude?: readonly string[];
 }
 
 /**
@@ -29,7 +44,7 @@ export interface ArticleBody {
  */
 export interface ArticleSource {
   /** @param messageId Message-ID **without** angle brackets, as stored in the NZB. */
-  body(messageId: string): Promise<ArticleBody>;
+  body(messageId: string, options?: ArticleFetchOptions): Promise<ArticleBody>;
 }
 
 /**

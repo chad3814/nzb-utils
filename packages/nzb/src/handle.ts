@@ -1,8 +1,8 @@
-import { decodeArticle } from '@chad3814/yenc';
 import type { YencArticle } from '@chad3814/yenc';
 import type { NzbFile } from '@chad3814/nzb-parser';
 
 import { NzbGeometryError } from './errors.ts';
+import { fetchArticle } from './fetch.ts';
 import { probeGeometry, verifyPlacement } from './geometry.ts';
 import type { FileHeader } from './geometry.ts';
 import { mimeTypeFor } from './mime.ts';
@@ -269,9 +269,7 @@ class Handle implements NzbFileHandle {
     const article =
       number === 1
         ? context.first
-        : decodeArticle((await context.source.body(segment.messageId)).body, {
-            verify: context.verify,
-          });
+        : await fetchArticle(context.source, segment.messageId, { verify: context.verify });
 
     verifyPlacement(article, number, context.geometry, context.header);
     return article;
