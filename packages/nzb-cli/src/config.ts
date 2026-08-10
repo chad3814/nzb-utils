@@ -194,8 +194,60 @@ function secretRef(value: unknown, field: string, path: string): SecretRef | und
   throw new CliError(`${path}: ${field} must be {"env": "NAME"} or {"file": "PATH"}`);
 }
 
-/** Merge the config file with flag overrides and apply defaults. */
-export function resolveServer(config: NzbConfig, overrides: ServerOverrides): ServerSettings {
+/**
+ * How many connections to open, when neither a flag nor a config file says.
+ *
+ * Measured against a real provider, throughput stops improving at four; past
+ * that the surplus requests queue while still holding decoded articles.
+ */
+const DEFAULT_CONNECTIONS = 4;
+
+/** The environment variable that sets the pool size. */
+export const CONNECTIONS_ENV = 'NNTP_CONNECTIONS';
+
+/**
+ * Read the pool size from the environment.
+ *
+ * Returns undefined when unset or empty — `export NNTP_CONNECTIONS=` is how a
+ * shell clears a variable in practice, and `Number('')` is 0, which would
+ * otherwise be a validation failure rather than an absence.
+ *
+ * Anything else present but unusable throws, naming the variable: `Number` maps
+ * a typo to `NaN`, and `NaN < 1` is false, so an unchecked value reaches the
+ * pool as a size of `NaN`.
+ */
+function connectionsFromEnv(env: Environment): number | undefined {
+  const raw = env[CONNECTIONS_ENV]?.trim();
+  if (raw === undefined || raw === '') {
+    return undefined;
+  }
+
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new CliError(
+      `${CONNECTIONS_ENV} must be a whole number of at least 1, got ${JSON.stringify(raw)}`,
+    );
+  }
+  return value;
+}
+
+/** The subset of `process.env` this module reads. Injected so it can be tested. */
+export type Environment = Readonly<Record<string, string | undefined>>;
+
+/**
+ * Merge the config file with the environment and flag overrides, and apply
+ * defaults.
+ *
+ * Precedence is flag, then environment, then config file: the file is a
+ * standing preference, the environment belongs to this invocation, and a flag
+ * is the caller saying it explicitly. That is the same ordering the password
+ * chain uses.
+ */
+export function resolveServer(
+  config: NzbConfig,
+  overrides: ServerOverrides,
+  env: Environment = process.env,
+): ServerSettings {
   const host = overrides.host ?? config.host;
   if (host === undefined) {
     throw new CliError(
@@ -209,7 +261,8 @@ export function resolveServer(config: NzbConfig, overrides: ServerOverrides): Se
     throw new CliError(`--port must be between 1 and 65535, got ${String(port)}`);
   }
 
-  const connections = overrides.connections ?? config.connections ?? 4;
+  const connections =
+    overrides.connections ?? connectionsFromEnv(env) ?? config.connections ?? DEFAULT_CONNECTIONS;
   if (connections < 1) {
     throw new CliError(`--connections must be at least 1, got ${String(connections)}`);
   }

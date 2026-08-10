@@ -159,7 +159,7 @@ describe('loadConfig', () => {
 
 describe('resolveServer', () => {
   it('defaults to implicit TLS on 563, which is the Usenet convention', () => {
-    const server = resolveServer({ host: 'news.example.com' }, {});
+    const server = resolveServer({ host: 'news.example.com' }, {}, {});
 
     expect(server.port).toBe(563);
     expect(server.security).toBe('implicit');
@@ -169,14 +169,14 @@ describe('resolveServer', () => {
     // null means "look in the usual places": environment, then secret mount,
     // then a prompt for the password. Pinning a single source here would
     // silently disable the other two.
-    const server = resolveServer({ host: 'news.example.com' }, {});
+    const server = resolveServer({ host: 'news.example.com' }, {}, {});
 
     expect(server.user).toBeNull();
     expect(server.password).toBeNull();
   });
 
   it('lets the config name a single password source, replacing the chain', () => {
-    const server = resolveServer({ host: 'h', password: { env: 'OTHER' } }, {});
+    const server = resolveServer({ host: 'h', password: { env: 'OTHER' } }, {}, {});
 
     expect(server.password).toEqual({ env: 'OTHER' });
   });
@@ -185,6 +185,7 @@ describe('resolveServer', () => {
     const server = resolveServer(
       { host: 'h', password: { env: 'FROM_CONFIG' } },
       { password: { file: '/from/flag' } },
+      {},
     );
 
     expect(server.password).toEqual({ file: '/from/flag' });
@@ -194,6 +195,7 @@ describe('resolveServer', () => {
     const server = resolveServer(
       { host: 'news.example.com', port: 563, connections: 4 },
       { host: 'other.example.com', connections: 12 },
+      {},
     );
 
     expect(server.host).toBe('other.example.com');
@@ -201,15 +203,82 @@ describe('resolveServer', () => {
     expect(server.port).toBe(563);
   });
 
+  it('defaults the connection count to four', () => {
+    expect(resolveServer({ host: 'h' }, {}, {}).connections).toBe(4);
+  });
+
+  it('takes the connection count from NNTP_CONNECTIONS', () => {
+    const server = resolveServer({ host: 'h' }, {}, { NNTP_CONNECTIONS: '8' });
+
+    expect(server.connections).toBe(8);
+  });
+
+  it('lets the environment override the config file', () => {
+    // The config file is the standing preference; the environment belongs to
+    // this invocation, so it wins. Same ordering as the password chain.
+    const server = resolveServer({ host: 'h', connections: 2 }, {}, { NNTP_CONNECTIONS: '8' });
+
+    expect(server.connections).toBe(8);
+  });
+
+  it('lets --connections override the environment', () => {
+    const server = resolveServer({ host: 'h' }, { connections: 3 }, { NNTP_CONNECTIONS: '8' });
+
+    expect(server.connections).toBe(3);
+  });
+
+  it('ignores an empty NNTP_CONNECTIONS rather than reading it as zero', () => {
+    // `export NNTP_CONNECTIONS=` is how a shell unsets a variable in practice,
+    // and Number('') is 0, which would otherwise fail validation and make the
+    // command unusable until the caller worked out why.
+    expect(
+      resolveServer({ host: 'h', connections: 2 }, {}, { NNTP_CONNECTIONS: '' }).connections,
+    ).toBe(2);
+  });
+
+  it('treats a whitespace-only NNTP_CONNECTIONS as unset', () => {
+    // Number('  ') is 0, so without trimming this is a validation failure
+    // rather than an absence — and the value is invisible in a terminal.
+    const server = resolveServer({ host: 'h', connections: 2 }, {}, { NNTP_CONNECTIONS: '  ' });
+
+    expect(server.connections).toBe(2);
+  });
+
+  it('accepts a padded NNTP_CONNECTIONS', () => {
+    expect(resolveServer({ host: 'h' }, {}, { NNTP_CONNECTIONS: ' 8 ' }).connections).toBe(8);
+  });
+
+  it('rejects an NNTP_CONNECTIONS that is not a number', () => {
+    // Number('eight') is NaN, and NaN < 1 is false — so without an explicit
+    // check this reaches the pool as a size of NaN.
+    expect(() => resolveServer({ host: 'h' }, {}, { NNTP_CONNECTIONS: 'eight' })).toThrow(
+      /NNTP_CONNECTIONS/u,
+    );
+  });
+
+  it('rejects a fractional NNTP_CONNECTIONS', () => {
+    expect(() => resolveServer({ host: 'h' }, {}, { NNTP_CONNECTIONS: '2.5' })).toThrow(
+      /NNTP_CONNECTIONS/u,
+    );
+  });
+
+  it('names the environment variable, not the flag, when the environment is at fault', () => {
+    // A message saying "--connections must be at least 1" sends someone
+    // hunting through a command line that does not contain it.
+    expect(() => resolveServer({ host: 'h' }, {}, { NNTP_CONNECTIONS: '0' })).toThrow(
+      /NNTP_CONNECTIONS/u,
+    );
+  });
+
   it('fails when no host is configured anywhere', () => {
-    expect(() => resolveServer({}, {})).toThrow(/--host/u);
+    expect(() => resolveServer({}, {}, {})).toThrow(/--host/u);
   });
 
   it('rejects a connection count below one', () => {
-    expect(() => resolveServer({ host: 'h' }, { connections: 0 })).toThrow(CliError);
+    expect(() => resolveServer({ host: 'h' }, { connections: 0 }, {})).toThrow(CliError);
   });
 
   it('rejects a port outside the valid range', () => {
-    expect(() => resolveServer({ host: 'h' }, { port: 70_000 })).toThrow(CliError);
+    expect(() => resolveServer({ host: 'h' }, { port: 70_000 }, {})).toThrow(CliError);
   });
 });

@@ -17,15 +17,19 @@ const SERVER_FLAGS = `Server (a config file supplies the defaults; see below):
       --host HOST          news server
       --port N             default 563
       --security MODE      implicit | starttls | none (default implicit)
-  -c, --connections N      simultaneous connections (default 4); respect your
-                           provider's cap. Also sets how many articles are
-                           fetched at once, so a download costs roughly
-                           N x article size in memory
+  -c, --connections N      simultaneous connections (default 4, or
+                           $NNTP_CONNECTIONS); respect your provider's cap. Also
+                           sets how many articles are fetched at once, so a
+                           download costs roughly N x article size in memory
       --user NAME          username (not a secret, so a literal is fine)
       --pass-env NAME      read the password from this environment variable
       --pass-file PATH     read the password from this file
       --credential-ttl S   re-resolve credentials older than S seconds, for
                            sources that issue them with a lifetime
+
+$NNTP_CONNECTIONS sets the connection count for one invocation, overriding the
+config file but not --connections. Useful for a second provider or a throttled
+link without editing the file each time.
 
 With neither --pass-env nor --pass-file, the password is looked for in:
 

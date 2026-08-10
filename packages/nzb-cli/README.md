@@ -164,6 +164,14 @@ Omit `password` to use the default chain. Naming one pins it, exactly as the
 flags do. An inline password is **rejected**, not merely discouraged: accepting
 one would make the easy path the unsafe one. Every flag overrides the file.
 
+`connections` also reads `$NNTP_CONNECTIONS`, so a run against a second provider
+or over a throttled link does not mean editing the file. Precedence is
+`--connections`, then `$NNTP_CONNECTIONS`, then the file, then 4 — the file is a
+standing preference, the environment belongs to one invocation, and the flag is
+the caller being explicit. An unusable value is an error that names
+`NNTP_CONNECTIONS` rather than the flag, because `Number('eight')` is `NaN` and
+`NaN < 1` is false: unchecked, it would reach the pool as a size of `NaN`.
+
 A config that is writable by group or others is refused. Not about secrecy — it
 holds references, not secrets, so being readable is fine and is not flagged.
 It is about what a writer could do: change `host`, and your next run
@@ -198,7 +206,9 @@ So:
 - **Progress goes to stderr, the report to stdout,** so `--json | jq` and
   `> file` both work.
 - **`--connections` sets both the pool size and how many articles are fetched at
-  once.** A download writes each article at its true offset as it arrives, so a
+  once,** and `$NNTP_CONNECTIONS` sets it for one invocation — it beats the
+  config file and loses to the flag. A download writes each article at its true
+  offset as it arrives, so a
   slow article does not hold up the ones behind it, and the file on disk is
   identical either way. It costs roughly `connections × article size` in memory — 32 MiB at the default
   of 4 against a 4 MiB post — regardless of how large the file is. Measured on a
