@@ -1,6 +1,6 @@
 import { NntpPool } from './pool.ts';
 import type { NntpPoolOptions } from './pool.ts';
-import { NntpProtocolError } from './errors.ts';
+import { NntpCapacityError, NntpProtocolError } from './errors.ts';
 import type { NntpConnectionFailure } from './errors.ts';
 import type { NntpArticleResponse, NntpResponse } from './models.ts';
 
@@ -141,21 +141,34 @@ export class NntpMultiPool {
    * Returns the raw response alongside the name rather than merging them here:
    * spreading a generic `T` does not typecheck as `T`, and each caller knows its
    * own concrete response type.
+   *
+   * `requireSpillover` is sticky: once a server has been skipped because it was
+   * full, everything after it is serving overflow rather than filling a gap, and
+   * overflow is opt-in. `firstCapacityError` keeps only the earliest saturated
+   * server's error, because that account is the actionable one -- a later
+   * server's cap (typically a backup/block account) is downstream noise once the
+   * walk is already in overflow, and must never overwrite it.
    */
   async #run<T extends NntpResponse>(
     options: ArticleFetchOptions | undefined,
     call: (pool: NntpPool) => Promise<T>,
   ): Promise<{ response: T; server: string }> {
     const excluded = new Set(options?.exclude ?? []);
+    let requireSpillover = false;
+    let firstCapacityError: NntpCapacityError | null = null;
 
     for (const entry of this.#servers) {
       if (entry.state === 'down' || excluded.has(entry.name)) {
         continue;
       }
+      if (requireSpillover && !entry.spillover) {
+        continue;
+      }
 
       try {
-        /* oxlint-disable-next-line no-await-in-loop -- sequential is the point:
-           asking every server at once would spend backup bytes on every article */
+        // Sequential is the point: asking every server at once would spend a
+        // metered account's bytes on every article.
+        // oxlint-disable-next-line no-await-in-loop -- sequential by design
         const response = await call(entry.pool);
         entry.consecutiveFailures = 0;
         return { response, server: entry.name };
@@ -165,8 +178,21 @@ export class NntpMultiPool {
           // says nothing about its health.
           continue;
         }
+        if (error instanceof NntpCapacityError) {
+          // Only reaches here when the pool could open no connection at all; a
+          // partial cap is absorbed by the pool shrinking and queueing.
+          requireSpillover = true;
+          if (firstCapacityError === null) {
+            firstCapacityError = error;
+          }
+          continue;
+        }
         throw error;
       }
+    }
+
+    if (firstCapacityError !== null) {
+      throw firstCapacityError;
     }
 
     throw new NntpProtocolError(430, 'No Such Article on any configured server');

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { NntpMultiPool } from '../src/multi-pool.ts';
 import type { NntpServerOptions } from '../src/multi-pool.ts';
+import { NntpCapacityError } from '../src/errors.ts';
 import { provider as startProvider } from './fake-provider.ts';
 import type { FakeOptions } from './fake-provider.ts';
 import type { FakeServer } from './fake-server.ts';
@@ -105,5 +106,93 @@ describe('NntpMultiPool selection', () => {
     });
 
     await expect(pool.stat('a@b')).resolves.toMatchObject({ code: 223, server: 'backup' });
+  });
+});
+
+describe('NntpMultiPool at a connection cap', () => {
+  it('does not spill onto a server that has not opted in', async () => {
+    // logins: 0 means the primary can open nothing at all, which is the only
+    // case where NntpCapacityError escapes the pool -- a partial cap is
+    // absorbed by the pool shrinking its limit and queueing.
+    pool = new NntpMultiPool({
+      servers: [await provider('primary', { logins: 0 }), await provider('block')],
+    });
+
+    await expect(pool.body('a@b')).rejects.toBeInstanceOf(NntpCapacityError);
+    expect(servers[1]?.commands).toEqual([]);
+  });
+
+  it('spills onto a server that has opted in', async () => {
+    pool = new NntpMultiPool({
+      servers: [
+        await provider('primary', { logins: 0 }),
+        await provider('second', {}, { spillover: true }),
+      ],
+    });
+
+    await expect(pool.body('a@b')).resolves.toMatchObject({ server: 'second' });
+  });
+
+  it('still falls back to a non-spillover server for a genuine gap', async () => {
+    // The flag gates overflow only. A 430 is a gap, and that is what the
+    // backup is for.
+    pool = new NntpMultiPool({
+      servers: [await provider('primary', { has: false }), await provider('block')],
+    });
+
+    await expect(pool.body('a@b')).resolves.toMatchObject({ server: 'block' });
+  });
+
+  it('reports the first saturated server, not the last, when more than one is full', async () => {
+    // The primary's cap is the actionable fact -- it names the account worth
+    // adding capacity to. A downstream server's cap is just where the walk
+    // gave up next; surfacing that one instead would send someone to
+    // investigate the wrong account, which is exactly the misattribution
+    // NntpCapacityError exists to prevent.
+    pool = new NntpMultiPool({
+      servers: [
+        await provider('primary', { logins: 0, capacityReason: 'primary is full' }),
+        await provider(
+          'second',
+          { logins: 0, capacityReason: 'second is full' },
+          { spillover: true },
+        ),
+      ],
+    });
+
+    let caught: unknown;
+    try {
+      await pool.body('a@b');
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(NntpCapacityError);
+    expect(caught).toMatchObject({ message: expect.stringContaining('primary is full') });
+    // Confirms the walk actually reached the second server (spillover let it
+    // through), so the assertion above is exercising the overwrite, not a
+    // walk that stopped at the primary regardless.
+    expect(pool.servers[1]?.failures).toHaveLength(1);
+  });
+
+  it('cannot reach a non-spillover server past a saturated primary, even across an intervening 430', async () => {
+    // This looks like a bug at a glance: the third server has the article and
+    // never gets asked. It is intended. The primary never got to answer
+    // "do you have this article" -- it never opened a connection at all -- so
+    // there is no demonstrated gap, only an unproven maybe. Spending a metered
+    // account's bytes on a maybe is exactly what spillover being opt-in exists
+    // to prevent. The 430 in the middle is a red herring: the third server is
+    // unreachable this run purely because it never opted in, with or without
+    // a middle server present at all.
+    pool = new NntpMultiPool({
+      servers: [
+        await provider('primary', { logins: 0 }),
+        await provider('middle', { has: false }, { spillover: true }),
+        await provider('third'),
+      ],
+    });
+
+    await expect(pool.body('a@b')).rejects.toBeInstanceOf(NntpCapacityError);
+    expect(servers[2]?.commands).toEqual([]);
   });
 });
