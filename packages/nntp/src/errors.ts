@@ -101,3 +101,16 @@ export class NntpConnectionError extends Error {
     this.name = 'NntpConnectionError';
   }
 }
+
+/** Why one connection attempt failed, kept per attempt rather than merged. */
+export interface NntpConnectionFailure {
+  /**
+   * 0-based index of this attempt among the recorded failures.
+   *
+   * An ordinal, not a timestamp. It was called `at` until 1.2.0, which read
+   * enough like a time that `scripts/smoke.ts` printed it through `new Date()`
+   * and reported every refusal as 1970.
+   */
+  readonly attempt: number;
+  readonly reason: string;
+}

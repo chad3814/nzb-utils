@@ -44,6 +44,28 @@ async function open(connections: number, pass = 'right'): Promise<NntpPool> {
   return pool;
 }
 
+/** Accepts `allowed` logins, then answers 502 like a provider at its cap. */
+function cappedServer(allowed: number): (command: string) => string | null {
+  let logins = 0;
+
+  return (command: string): string | null => {
+    if (command.startsWith('AUTHINFO USER')) {
+      logins += 1;
+      return logins > allowed ? '502 Too many connections.\r\n' : '381 password required\r\n';
+    }
+    if (command.startsWith('AUTHINFO PASS')) {
+      return '281 authentication accepted\r\n';
+    }
+    if (command.startsWith('BODY')) {
+      return '222 0 <a@b> body follows\r\nhello\r\n.\r\n';
+    }
+    if (command === 'QUIT') {
+      return '205 closing\r\n';
+    }
+    return '500 unknown command\r\n';
+  };
+}
+
 describe('NntpPool', () => {
   it('fetches an article body through a pooled connection', async () => {
     const client = await open(2);
@@ -152,5 +174,18 @@ describe('NntpPool', () => {
     // The replacement server is on a different port, so the retry cannot
     // succeed -- what matters is that it fails cleanly instead of hanging.
     await expect(client.body('b@example.com')).rejects.toThrow(Error);
+  });
+
+  it('names the server that answered, so a caller can tell pools apart', async () => {
+    server = await startFakeServer({ respond: cappedServer(4) });
+    pool = new NntpPool({
+      endpoint: { host: '127.0.0.1', port: server.port, security: 'none' },
+      credentials: { user: 'someone', pass: 'secret' },
+      connections: 1,
+    });
+
+    const response = await pool.body('a@b');
+
+    expect(response.server).toBe('127.0.0.1');
   });
 });

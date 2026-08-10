@@ -66,6 +66,14 @@ export interface NntpCredentials {
 export interface NntpResponse {
   readonly code: number;
   readonly message: string;
+  /**
+   * Which server answered, for pools that have more than one to choose from.
+   *
+   * Set by `NntpPool` too, to its endpoint host, so a single pool and an
+   * `NntpMultiPool` report identically and a caller retrying elsewhere does
+   * not need to know which it holds.
+   */
+  readonly server?: string;
 }
 
 /** A multi-line article response. */
