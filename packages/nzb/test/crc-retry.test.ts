@@ -120,6 +120,32 @@ describe('fetchArticle', () => {
     );
     expect(calls).toBe(1);
   });
+
+  it('reports the checksum failure, not the empty walk, when nowhere else has it', async () => {
+    // What a single-server NntpMultiPool does: attempt 1 answers as 'a' with
+    // corrupt bytes, attempt 2 excludes 'a', the walk's loop body never runs,
+    // and the pool reports that no server was available to try. That is the
+    // opposite of what happened -- a server was available and its copy was
+    // wrong -- and it is the one case this whole feature exists for.
+    const { id, corrupt } = await corruptible();
+    const exhausted = new Error('no configured server could supply the article');
+    const source: ArticleSource = {
+      body(_messageId: string, options?: ArticleFetchOptions): Promise<ArticleBody> {
+        return (options?.exclude ?? []).includes('a')
+          ? Promise.reject(exhausted)
+          : Promise.resolve({ body: corrupt, server: 'a' });
+      },
+    };
+
+    const error = await fetchArticle(source, id, { verify: true }).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(YencChecksumError);
+    // The source's account of the walk is kept rather than discarded: it is
+    // still the only thing that says which servers were ruled out and why.
+    expect((error as Error).cause).toBe(exhausted);
+  });
 });
 
 /** Decoded bytes per segment for the failover posts below. Three, with a short tail. */
