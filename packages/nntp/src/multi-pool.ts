@@ -1,13 +1,17 @@
 import { NntpPool } from './pool.ts';
-import type { NntpPoolOptions } from './pool.ts';
 import {
   NntpAuthError,
   NntpCapacityError,
   NntpProtocolError,
   NntpUnavailableError,
 } from './errors.ts';
-import type { NntpConnectionFailure, NntpServerAttempt } from './errors.ts';
+import type { NntpServerAttempt } from './errors.ts';
 import type { NntpArticleResponse, NntpResponse } from './models.ts';
+import type {
+  ArticleFetchOptions,
+  NntpMultiPoolOptions,
+  NntpServerStatus,
+} from './multi-pool-models.ts';
 
 /**
  * Consecutive connection-level failures before a server leaves the rotation.
@@ -16,46 +20,6 @@ import type { NntpArticleResponse, NntpResponse } from './models.ts';
  * provider. An auth failure bypasses this entirely -- it is deterministic.
  */
 const DOWN_AFTER = 3;
-
-/**
- * One server in an ordered list.
- *
- * Extends {@link NntpPoolOptions} so a server is configured exactly as a single
- * pool is today — same endpoint, credentials, connection count and timeouts.
- */
-export interface NntpServerOptions extends NntpPoolOptions {
-  /** Stable name for failure reports and exclusions. Defaults to the host. */
-  readonly name?: string;
-  /**
-   * May this server take work an earlier one could have served, when that one
-   * is at its connection cap?
-   *
-   * Defaults to false. A metered block account should pay for gaps, not for
-   * overflow the primary would have covered a moment later.
-   */
-  readonly spillover?: boolean;
-}
-
-export interface NntpMultiPoolOptions {
-  /** Tried in order. The first is the primary. */
-  readonly servers: readonly NntpServerOptions[];
-}
-
-/** Narrowing a request away from servers already tried for this article. */
-export interface ArticleFetchOptions {
-  /** Server names already tried. */
-  readonly exclude?: readonly string[];
-}
-
-export interface NntpServerStatus {
-  readonly name: string;
-  readonly state: 'ready' | 'down';
-  /** Why it went down. Null while ready. */
-  readonly downReason: Error | null;
-  /** Learned connection limit, which may be below the configured one. */
-  readonly limit: number;
-  readonly failures: readonly NntpConnectionFailure[];
-}
 
 /** Mutable per-server state. Deliberately holds no credential — see below. */
 interface ServerEntry {
@@ -176,13 +140,16 @@ export class NntpMultiPool {
    * Split out of `#run` to stay under the file's max-lines-per-function limit.
    *
    * Records the attempt before classifying, and unconditionally -- including
-   * the 430 branch and the fatal primary-auth throw below -- so that
-   * `walk.attempts` reflects every server actually tried this walk, not just
-   * the ones that failed for a reason worth acting on. That is what lets
-   * `#run` tell "every server said 430" from "we could not find out" once the
-   * walk ends, and what stops an error type `#handleFailure` has never seen
-   * before (a bug, not a protocol response) from being silently folded into
-   * that same fallback.
+   * the 430 branch -- so that `walk.attempts` reflects every server actually
+   * tried this walk, not just the ones that failed for a reason worth acting
+   * on. That is what lets `#run` tell "every server said 430" from "we could
+   * not find out" once the walk ends, and what stops an error type
+   * `#handleFailure` has never seen before (a bug, not a protocol response)
+   * from being silently folded into that same fallback. The fatal
+   * primary-auth throw below also records first, but not for that reason --
+   * the throw leaves `#run` immediately and nothing ever reads
+   * `walk.attempts` on that path. It records first anyway, purely so this
+   * stays one push instead of four call sites each doing their own.
    *
    * May throw: an auth failure on the primary is fatal, see
    * {@link #handleAuthFailure}. Everything else is recorded and swallowed so

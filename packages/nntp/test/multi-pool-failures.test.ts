@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { NntpMultiPool } from '../src/multi-pool.ts';
-import type { NntpServerOptions } from '../src/multi-pool.ts';
+import type { NntpServerOptions } from '../src/multi-pool-models.ts';
 import { NntpAuthError, NntpProtocolError } from '../src/errors.ts';
 import { provider as startProvider } from './fake-provider.ts';
 import type { FakeOptions } from './fake-provider.ts';

@@ -1,6 +1,6 @@
 import { startFakeServer } from './fake-server.ts';
 import type { FakeServer } from './fake-server.ts';
-import type { NntpServerOptions } from '../src/multi-pool.ts';
+import type { NntpServerOptions } from '../src/multi-pool-models.ts';
 
 /**
  * A fake provider.
