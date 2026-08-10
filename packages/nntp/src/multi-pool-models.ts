@@ -40,3 +40,16 @@ export interface NntpServerStatus {
   readonly limit: number;
   readonly failures: readonly NntpConnectionFailure[];
 }
+
+/**
+ * One server's answer about one article.
+ *
+ * Three states, not two: `absent` is the server saying it does not have the
+ * article, `unknown` is not having been able to ask. Collapsing them loses the
+ * only distinction that matters when deciding whether a file is really gone.
+ */
+export type NntpServerStat = { readonly server: string } & (
+  | { readonly status: 'present' }
+  | { readonly status: 'absent' }
+  | { readonly status: 'unknown'; readonly reason: Error }
+);

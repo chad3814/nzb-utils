@@ -2,6 +2,7 @@ import { NntpPool } from './pool.ts';
 import {
   NntpAuthError,
   NntpCapacityError,
+  NntpConnectionError,
   NntpProtocolError,
   NntpUnavailableError,
 } from './errors.ts';
@@ -10,6 +11,7 @@ import type { NntpArticleResponse, NntpResponse } from './models.ts';
 import type {
   ArticleFetchOptions,
   NntpMultiPoolOptions,
+  NntpServerStat,
   NntpServerStatus,
 } from './multi-pool-models.ts';
 
@@ -198,6 +200,36 @@ export class NntpMultiPool {
   async stat(messageId: string, options?: ArticleFetchOptions): Promise<NntpResponse> {
     const { response, server } = await this.#run(options, (pool) => pool.stat(messageId));
     return { ...response, server };
+  }
+
+  /**
+   * Ask every server whether it has the article. Concurrent, unlike `#run`:
+   * STAT costs a round trip and no meaningful bytes, so spillover need not
+   * gate it. Diagnostic only -- never marks a server down or touches
+   * `consecutiveFailures`; a server already `down` is reported `unknown`
+   * with its recorded reason, not omitted.
+   */
+  async statAll(messageId: string): Promise<readonly NntpServerStat[]> {
+    if (this.#fatal !== null) throw this.#fatal;
+
+    return await Promise.all(
+      this.#servers.map(async (entry): Promise<NntpServerStat> => {
+        if (entry.state === 'down') {
+          const reason = entry.downReason ?? new NntpConnectionError(`${entry.name} is down`);
+          return { server: entry.name, status: 'unknown', reason };
+        }
+        try {
+          await entry.pool.stat(messageId);
+          return { server: entry.name, status: 'present' };
+        } catch (error) {
+          if (error instanceof NntpProtocolError && error.code === 430) {
+            return { server: entry.name, status: 'absent' };
+          }
+          const reason = error instanceof Error ? error : new Error(String(error));
+          return { server: entry.name, status: 'unknown', reason };
+        }
+      }),
+    );
   }
 
   /**
