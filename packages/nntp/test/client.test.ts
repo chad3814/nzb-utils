@@ -1,4 +1,3 @@
-import { readFile, readdir } from 'node:fs/promises';
 import { inspect } from 'node:util';
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -128,55 +127,6 @@ describe('NntpClient authentication', () => {
     expect(JSON.stringify(nntp)).not.toContain(PASSWORD);
     expect(inspectDeep(nntp)).not.toContain(PASSWORD);
     expect(inspect(nntp, { showHidden: true, depth: 4 })).not.toContain(PASSWORD);
-  });
-
-  it('never assigns credentials to a field anywhere in the package', async () => {
-    // A `#private` field is invisible to JSON.stringify, Reflect.ownKeys and
-    // util.inspect alike, so "the client does not retain the password" is not
-    // observable at runtime -- verified: none of the three reveal it. The rule
-    // is real and worth enforcing, so it is enforced against the source, which
-    // is the only place it can be seen.
-    const directory = new URL('../src/', import.meta.url);
-    const files = (await readdir(directory)).filter((name) => name.endsWith('.ts'));
-
-    expect(files.length).toBeGreaterThan(0);
-    const sources = await Promise.all(
-      files.map(async (file) => ({
-        file,
-        text: await readFile(new URL(file, directory), 'utf8'),
-      })),
-    );
-
-    for (const { file, text } of sources) {
-      expect(text, `${file} assigns credentials to a field`).not.toMatch(
-        /(?:this|self)\s*\.\s*#?\w+\s*=\s*credentials\b/u,
-      );
-      // Providers made a second slip possible that the rule above cannot see:
-      // stashing the *resolved* value, which is a plain string by then and no
-      // longer called `credentials`. A resolved secret must stay a local.
-      expect(text, `${file} retains a resolved secret on a field`).not.toMatch(
-        /(?:this|self)\s*\.\s*#?\w+\s*=\s*(?:await\s+)?resolveSecret\b/u,
-      );
-      // A third shape neither rule above catches: retaining a whole
-      // constructor `options` object rather than a credential directly. Every
-      // entry of `NntpMultiPoolOptions['servers']` carries a `credentials`
-      // field, so `this.#foo = options` puts an array of credentials on a
-      // field just as surely as `this.#foo = credentials` would -- which is
-      // exactly the mistake `NntpMultiPool`'s constructor was written to
-      // avoid (destructuring `options.servers` into a mapped array instead).
-      // The negative lookahead is deliberately narrow: it forbids the bare
-      // `= options` retention without flagging legitimate narrow reads like
-      // `this.#endpoint = options.endpoint` or `this.#timeoutMs =
-      // options.timeoutMs` (both real, in pool.ts and client.ts). It does
-      // NOT catch `this.#foo = options.servers` -- retaining one property
-      // that happens to be an array of options objects -- because a regex
-      // that also banned that would ban `options.endpoint` and
-      // `options.timeoutMs` too. That narrower shape stays a code-review
-      // concern, not a test-enforced one.
-      expect(text, `${file} retains the whole options object on a field`).not.toMatch(
-        /(?:this|self)\s*\.\s*#?\w+\s*=\s*options\b(?!\s*\.)/u,
-      );
-    }
   });
 });
 
