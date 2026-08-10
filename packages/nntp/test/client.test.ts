@@ -157,6 +157,25 @@ describe('NntpClient authentication', () => {
       expect(text, `${file} retains a resolved secret on a field`).not.toMatch(
         /(?:this|self)\s*\.\s*#?\w+\s*=\s*(?:await\s+)?resolveSecret\b/u,
       );
+      // A third shape neither rule above catches: retaining a whole
+      // constructor `options` object rather than a credential directly. Every
+      // entry of `NntpMultiPoolOptions['servers']` carries a `credentials`
+      // field, so `this.#foo = options` puts an array of credentials on a
+      // field just as surely as `this.#foo = credentials` would -- which is
+      // exactly the mistake `NntpMultiPool`'s constructor was written to
+      // avoid (destructuring `options.servers` into a mapped array instead).
+      // The negative lookahead is deliberately narrow: it forbids the bare
+      // `= options` retention without flagging legitimate narrow reads like
+      // `this.#endpoint = options.endpoint` or `this.#timeoutMs =
+      // options.timeoutMs` (both real, in pool.ts and client.ts). It does
+      // NOT catch `this.#foo = options.servers` -- retaining one property
+      // that happens to be an array of options objects -- because a regex
+      // that also banned that would ban `options.endpoint` and
+      // `options.timeoutMs` too. That narrower shape stays a code-review
+      // concern, not a test-enforced one.
+      expect(text, `${file} retains the whole options object on a field`).not.toMatch(
+        /(?:this|self)\s*\.\s*#?\w+\s*=\s*options\b(?!\s*\.)/u,
+      );
     }
   });
 });

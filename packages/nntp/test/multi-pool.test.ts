@@ -59,10 +59,16 @@ describe('NntpMultiPool construction', () => {
     expect(() => new NntpMultiPool({ servers: [] })).toThrow(/at least one/u);
   });
 
-  it('keeps no credential on the multi-pool itself', async () => {
-    // Hard rule 3. The source-level scan in client.test.ts covers assignments;
-    // this covers the shape that would defeat it -- retaining the whole options
-    // object, credentials and all.
+  it('keeps no credential on a public field of the multi-pool', async () => {
+    // Hard rule 3. This only catches a slip onto a *public* field -- verified
+    // by deliberately breaking the constructor: a #private field holding the
+    // whole options object is invisible to `inspect({ showHidden: true })`,
+    // same as it is to `JSON.stringify` and `Reflect.ownKeys` (see CLAUDE.md),
+    // and that version of the bug passed this test right along with the real
+    // code. Only a *public* field made it fail. Every field on this class is
+    // `#private`, so the realistic version of this mistake is exactly the one
+    // this test cannot see; the source-level scan in client.test.ts is what
+    // actually enforces the rule.
     pool = new NntpMultiPool({ servers: [await provider('primary')] });
 
     expect(inspect(pool, { showHidden: true, depth: 6 })).not.toContain('secret');
