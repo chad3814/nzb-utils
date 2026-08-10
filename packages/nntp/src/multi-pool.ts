@@ -110,11 +110,11 @@ export class NntpMultiPool {
    * Ask every server whether it has the article.
    *
    * Concurrent, because STAT transfers no body: it costs a round trip and no
-   * meaningful bytes, so it is not gated by {@link NntpServerOptions.spillover}
-   * the way a download is. Purely diagnostic -- it never marks a server down
-   * and never counts toward the failure threshold. A server already marked
-   * down is still reported, as `unknown` with its recorded reason, rather
-   * than omitted -- the caller asked about every server.
+   * meaningful bytes, so it is not gated by the `spillover` option the way a
+   * download is. Purely diagnostic -- it never marks a server down and never
+   * counts toward the failure threshold. A server already marked down is
+   * still reported, as `unknown` with its recorded reason, rather than
+   * omitted -- the caller asked about every server.
    */
   async statAll(messageId: string): Promise<readonly NntpServerStat[]> {
     if (this.#fatal !== null) {
