@@ -9,6 +9,7 @@ export type {
   ArticleBody,
   ArticleSource,
   ByteRange,
+  ByteSink,
   NzbFileHandle,
   ResolvedRange,
   ResolvedSegment,

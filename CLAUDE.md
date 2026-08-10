@@ -137,6 +137,25 @@ motivated the rewrite. Each needs a test that would fail against the original.
   A second provider fixes more real failures than repair would. Do not add
   repair without revisiting that trade.
 
+- **Downloads are written at offsets, not in order (settled 2026-08-10).**
+  `NzbFileHandle.writeTo(sink)` hands each article to a sink with its absolute
+  offset in the file, as it arrives. The reading methods (`bytes`, `stream`,
+  async iteration) still emit in file order and always will — a caller
+  concatenating needs that. A caller writing to a file does not, and making it
+  wait means a slow article holds up every finished article behind it while the
+  connections that fetched them idle. `@chad3814/nzb-cli`'s `get` uses
+  `writeTo`; its output is byte-identical either way, which is the property the
+  tests pin.
+
+  Two guarantees hold the sink contract together, both in `src/write.ts`:
+  the sink is never entered twice at once (a `Mutex`, because Node documents
+  concurrent `write()` on one handle as unsafe even though positional writes are
+  `pwrite`), and at most two chunks are held (one running, one queued, then the
+  loop waits). The second is the backpressure — without it a sink slower than
+  the network queues the whole range in memory, which is 7.8 GiB on a real
+  release. Do not "simplify" either away; both have mutation tests that fail
+  when they are removed.
+
 ## Real-world findings (2026-08-05, live run against Newshosting)
 
 Things a synthetic fixture cannot tell you, learned by pointing the stack at a

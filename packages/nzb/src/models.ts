@@ -113,6 +113,15 @@ export interface ResolvedSegment extends SegmentSlice {
 }
 
 /**
+ * Receives decoded bytes and the absolute offset in the file they belong at.
+ *
+ * Never called concurrently: {@link NzbFileHandle.writeTo} serialises the
+ * handovers, so an implementation can write, hash or forward without any
+ * locking of its own.
+ */
+export type ByteSink = (offset: number, chunk: Uint8Array) => void | Promise<void>;
+
+/**
  * Handle for one file inside an NZB. Structurally compatible with W3C `File`.
  *
  * Slicing invariants, all of which the reference implementation
@@ -146,6 +155,21 @@ export interface NzbFileHandle extends AsyncIterable<Uint8Array> {
   readonly source: NzbFile;
 
   slice(start?: number, end?: number, contentType?: string): NzbFileHandle;
+  /**
+   * Fetch this window and hand each article to `sink` at its true offset.
+   *
+   * Unlike the reading methods, this does **not** wait for order. A consumer
+   * that writes at an offset does not need it, and insisting on it means a slow
+   * article holds up every finished article behind it while the connections
+   * that fetched them idle. Articles are handed over as they arrive.
+   *
+   * Offsets are absolute within the whole file, not relative to this window, so
+   * a sliced handle writes into the right part of a sparse file without the
+   * caller tracking where it started.
+   *
+   * @returns how many bytes were handed over.
+   */
+  writeTo(sink: ByteSink): Promise<number>;
   arrayBuffer(): Promise<ArrayBuffer>;
   bytes(): Promise<Uint8Array>;
   text(): Promise<string>;

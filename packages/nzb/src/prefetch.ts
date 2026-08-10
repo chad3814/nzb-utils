@@ -1,4 +1,13 @@
 /**
+ * Bounded prefetch windows, in two flavours.
+ *
+ * {@link prefetch} preserves order, which a stream needs. {@link asCompleted}
+ * does not, which a file does not: writing at an offset makes order irrelevant,
+ * and insisting on it means a slow article holds up every article behind it
+ * that has already arrived.
+ */
+
+/**
  * A bounded, order-preserving prefetch window.
  *
  * Articles have to be emitted in file order, so the naive way to go faster —
@@ -64,6 +73,56 @@ export async function* prefetch<T, R>(
     // function exists to keep.
     start();
 
+    yield value;
+  }
+}
+
+/**
+ * The same bounded window, yielding each result the moment it is ready.
+ *
+ * For a consumer that writes at an offset rather than appending, order is not
+ * information — and demanding it costs real time. With a window of eight and a
+ * slow first article, the ordered generator holds seven finished articles in
+ * memory waiting for one, and the connections that fetched them sit idle. Here
+ * the seven are handed over and their slots refilled immediately.
+ *
+ * The trade is diagnostic rather than functional: an error is whichever request
+ * failed first, not the earliest in the file, because there is no longer a
+ * position at which to wait for it.
+ */
+export async function* asCompleted<T, R>(
+  items: readonly T[],
+  depth: number,
+  work: (item: T, index: number) => Promise<R>,
+): AsyncGenerator<R> {
+  /** Keyed by index so a settled promise can remove itself from the window. */
+  const window = new Map<number, Promise<{ readonly key: number; readonly value: R }>>();
+  let next = 0;
+
+  const start = (): void => {
+    const item = items[next];
+    if (item === undefined) {
+      return;
+    }
+
+    const key = next;
+    next += 1;
+    const promise = work(item, key).then((value) => ({ key, value }));
+    // A sink, so a rejection nobody races -- because another failed first --
+    // does not surface as an unhandled rejection and take the process down.
+    promise.catch(noop);
+    window.set(key, promise);
+  };
+
+  for (let index = 0; index < Math.max(1, depth); index += 1) {
+    start();
+  }
+
+  while (window.size > 0) {
+    // oxlint-disable-next-line no-await-in-loop -- the window is the concurrency
+    const { key, value } = await Promise.race(window.values());
+    window.delete(key);
+    start();
     yield value;
   }
 }

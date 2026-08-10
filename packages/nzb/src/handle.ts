@@ -6,11 +6,13 @@ import { NzbGeometryError } from './errors.ts';
 import { probeGeometry, verifyPlacement } from './geometry.ts';
 import type { FileHeader } from './geometry.ts';
 import { mimeTypeFor } from './mime.ts';
-import { prefetch } from './prefetch.ts';
+import { asCompleted, prefetch } from './prefetch.ts';
 import { normalizeSlice, resolveRange } from './range.ts';
+import { writeParts } from './write.ts';
 import type {
   ArticleSource,
   ByteRange,
+  ByteSink,
   NzbFileHandle,
   SegmentGeometry,
   SegmentSlice,
@@ -145,6 +147,24 @@ class Handle implements NzbFileHandle {
       this.#context,
       { start: this.#window.start + local.start, end: this.#window.start + local.end },
       contentType ?? this.#type,
+    );
+  }
+
+  writeTo(sink: ByteSink): Promise<number> {
+    const { segments } = this.#resolve();
+
+    return writeParts(
+      asCompleted(segments, this.#context.prefetch, async (slice) => {
+        const article = await this.#articleFor(slice.number);
+        return {
+          offset: (slice.number - 1) * this.#context.geometry.segmentSize + slice.offsetInSegment,
+          data: article.data.subarray(
+            slice.offsetInSegment,
+            slice.offsetInSegment + slice.byteLength,
+          ),
+        };
+      }),
+      sink,
     );
   }
 

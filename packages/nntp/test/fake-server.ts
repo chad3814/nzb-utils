@@ -25,6 +25,15 @@ export interface FakeServerOptions {
    * nothing at all, which is how a hung server is simulated.
    */
   readonly respond: (command: string) => string | readonly string[] | null;
+  /**
+   * Milliseconds to hold a reply before sending it, per command.
+   *
+   * Lets a test make one article arrive after articles requested later, which
+   * is how a real provider behaves and how the ordering assumptions in the
+   * download path get exercised. Omitted means every reply is sent inline, so
+   * tests that do not ask for latency keep the timing they had.
+   */
+  readonly delay?: (command: string) => number;
 }
 
 const DEFAULT_GREETING = '200 fake NNTP ready (posting ok)\r\n';
@@ -61,12 +70,24 @@ export async function startFakeServer(options: FakeServerOptions): Promise<FakeS
           continue;
         }
 
-        for (const part of typeof reply === 'string' ? [reply] : reply) {
-          // latin1, not the default utf8: Usenet is 8-bit clean and an article
-          // body is binary. Writing it as utf8 turns every byte above 0x7f into
-          // two, which a test with an ASCII payload never notices and a test
-          // with a real yEnc payload fails on with a baffling CRC error.
-          socket.write(part, 'latin1');
+        // latin1, not the default utf8: Usenet is 8-bit clean and an article
+        // body is binary. Writing it as utf8 turns every byte above 0x7f into
+        // two, which a test with an ASCII payload never notices and a test
+        // with a real yEnc payload fails on with a baffling CRC error.
+        const send = (): void => {
+          if (socket.destroyed) {
+            return;
+          }
+          for (const part of typeof reply === 'string' ? [reply] : reply) {
+            socket.write(part, 'latin1');
+          }
+        };
+
+        const held = options.delay?.(command) ?? 0;
+        if (held > 0) {
+          setTimeout(send, held).unref();
+        } else {
+          send();
         }
       }
     });

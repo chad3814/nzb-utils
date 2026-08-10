@@ -34,9 +34,15 @@ const SERVER: Omit<ServerSettings, 'host' | 'port'> = {
   credentialTtlMs: null,
 };
 
-async function start(built: Post = buildPost({ files: FILES })): Promise<NntpPool> {
+async function start(
+  built: Post = buildPost({ files: FILES }),
+  delay?: (command: string) => number,
+): Promise<NntpPool> {
   post = built;
-  server = await startFakeServer({ respond: responder(post) });
+  server = await startFakeServer({
+    respond: responder(post),
+    ...(delay === undefined ? {} : { delay }),
+  });
   nzbPath = join(directory, 'test.nzb');
   await writeFile(nzbPath, post.xml);
 
@@ -85,6 +91,52 @@ describe('get', () => {
 
     expect(await readFile(join(out, 'show.mkv'))).toEqual(post.contents.get('show.mkv'));
     expect(await readFile(join(out, 'show.nfo'))).toEqual(post.contents.get('show.nfo'));
+  });
+
+  it('writes the right bytes when articles arrive out of order', async () => {
+    // A real provider does not answer in the order it was asked, and the
+    // download path deliberately does not wait for order — it writes each
+    // article at its offset as it lands. Every other test here has an instant,
+    // in-order source, which is exactly the condition that hides a
+    // wrong-offset bug.
+    const later = new Map<string, number>();
+    const nntp = await start(buildPost({ files: FILES }), (command) => {
+      const match = /^BODY <(.+)>$/u.exec(command);
+      if (match === null) {
+        return 0;
+      }
+      const id = match[1] ?? '';
+      // Earlier articles are held longest, so they arrive last.
+      const seen = later.size;
+      if (!later.has(id)) {
+        later.set(id, 40 - seen * 10);
+      }
+      return Math.max(0, later.get(id) ?? 0);
+    });
+
+    await get(
+      options({ server: { ...SERVER, host: '127.0.0.1', port: server?.port ?? 0 } }),
+      nntp,
+      silent,
+    );
+
+    expect(await readFile(join(out, 'show.mkv'))).toEqual(post.contents.get('show.mkv'));
+    expect(await readFile(join(out, 'show.nfo'))).toEqual(post.contents.get('show.nfo'));
+  });
+
+  it('reports the byte count only once every write has landed', async () => {
+    // The count is what the caller prints as the result. Returning it before
+    // the last queued write completes would report a file that is still short.
+    const nntp = await start(buildPost({ files: FILES }), (command) =>
+      command.startsWith('BODY') ? 15 : 0,
+    );
+
+    const result = await get(options(), nntp, silent);
+
+    // Both files complete on disk by the time the report is handed back.
+    expect((await stat(join(out, 'show.mkv'))).size).toBe(250);
+    expect((await stat(join(out, 'show.nfo'))).size).toBe(40);
+    expect(result.failed).toBe(false);
   });
 
   it('names files from the yEnc header, not the subject', async () => {

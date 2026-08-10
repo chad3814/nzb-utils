@@ -58,8 +58,9 @@ This package takes the same cheap prediction and then checks it:
    `resolveRange` then refuses to compute offsets at all.
 2. Every article is checked against that prediction as it arrives, before a single
    byte of it is copied out: its `=ypart` range must be exactly the range the
-   geometry claimed, and its `=ybegin name=` and `size=` must match segment 1's.
-   A mismatch throws `NzbGeometryError`.
+   geometry claimed, and its `=ybegin size=` must match segment 1's. Names are
+   deliberately not compared — obfuscated posts randomise them per article, as
+   the live run below found. A mismatch throws `NzbGeometryError`.
 
 So a uniform post costs one probe article, and a non-uniform one fails loudly at the
 first article that proves it. What does not happen is the third option, which is the
@@ -100,12 +101,14 @@ download verified nothing. PAR2-level verification will come from `@chad3814/par
 
 ## Layout
 
-| Module        | Role                                                    |
-| ------------- | ------------------------------------------------------- |
-| `range.ts`    | Slice and range arithmetic. Pure, no document, no I/O   |
-| `geometry.ts` | Probing segment 1, and verifying every article after it |
-| `handle.ts`   | The `File`-like handle: windows, fetching, streaming    |
-| `mime.ts`     | Filename to MIME type                                   |
+| Module        | Role                                                      |
+| ------------- | --------------------------------------------------------- |
+| `range.ts`    | Slice and range arithmetic. Pure, no document, no I/O     |
+| `geometry.ts` | Probing segment 1, and verifying every article after it   |
+| `handle.ts`   | The `File`-like handle: windows, fetching, streaming      |
+| `write.ts`    | Offset-addressed handover: unordered, serialised, bounded |
+| `mutex.ts`    | Runs queued tasks one at a time                           |
+| `mime.ts`     | Filename to MIME type                                     |
 
 `range.ts` is deliberately free of NZB identifiers and transports: given sizes and a
 range, it returns which segments to fetch and how to trim each. That is the part
@@ -185,6 +188,47 @@ The output is byte-identical at every depth, which is the part that matters.
 Errors stay ordered too: with several requests in flight a later article can
 fail sooner, but what surfaces is the first failure _in the file_, because that
 is where reading actually stops being possible.
+
+## `writeTo` does not wait for order
+
+Order is a cost the reading methods have to pay: `bytes()` and `stream()` hand
+back one contiguous run, so a slow article holds up every finished article
+behind it while the connections that fetched them sit idle.
+
+A consumer writing to a file does not need order at all — it needs to know
+_where_ each run goes. `writeTo` gives it that, and hands articles over as they
+arrive:
+
+```ts
+const handle = await openNzbFile(file, pool);
+const target = await open('out.bin', 'w');
+await handle.writeTo((offset, chunk) => target.write(chunk, 0, chunk.byteLength, offset));
+```
+
+Offsets are absolute within the whole file, not relative to the handle's window,
+so a sliced handle writes into the right part of a sparse file without the
+caller tracking where it started:
+
+```ts
+// Head and tail, written into one sparse file at their true offsets.
+await handle.slice(0, 4 << 20).writeTo(write);
+await handle.slice(-(4 << 20)).writeTo(write);
+```
+
+Two guarantees make a sink simple to write:
+
+- **The sink is never entered twice at once.** Positional writes are `pwrite`
+  and share no seek pointer, so they are safe in principle — but Node documents
+  concurrent `write()` on one handle as unsafe, and serialising the handover
+  costs nothing against a fetch three orders of magnitude slower. A sink can
+  write, hash or forward without locking of its own.
+- **At most two chunks are held.** One write runs while the next is queued
+  behind it; the loop then waits. A sink slower than the network throttles it
+  rather than filling memory, exactly as the read path's window does.
+
+The chunk handed over is a copy, so a sink may retain or transform it in place.
+That matters because segment 1's decoded article is kept for the life of the
+handle, and a view into it would be shared state.
 
 ## Known limits
 

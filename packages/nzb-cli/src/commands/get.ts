@@ -248,17 +248,24 @@ async function download(item: Selected, options: GetOptions, log: Log): Promise<
   const expected = item.windows.reduce((sum, window) => sum + window.handle.size, 0);
   let written = 0;
 
+  // Offsets are absolute within the file, which is exactly what a sparse write
+  // wants, so the same sink serves every window.
+  const write = async (offset: number, chunk: Uint8Array): Promise<void> => {
+    await sink.write(offset, chunk);
+    written += chunk.byteLength;
+    log(`${name}: ${bytes(written)} of ${bytes(expected)}`);
+  };
+
   try {
     for (const window of item.windows) {
-      let inWindow = 0;
-      // Streamed rather than buffered: a whole-file get of a 7.8 GiB release
-      // must not need 7.8 GiB of RSS to succeed.
-      for await (const chunk of window.handle) {
-        await sink.write(window.offset + inWindow, chunk);
-        inWindow += chunk.byteLength;
-        written += chunk.byteLength;
-        log(`${name}: ${bytes(written)} of ${bytes(expected)}`);
-      }
+      // writeTo rather than iteration: the file is written at offsets, so it
+      // has no use for order, and insisting on order means a slow article holds
+      // up every finished article behind it while the connections that fetched
+      // them idle. Still streamed — a whole-file get of a 7.8 GiB release must
+      // not need 7.8 GiB of RSS — and writeTo serialises the handovers, so the
+      // sink needs no locking of its own.
+      // oxlint-disable-next-line no-await-in-loop -- windows are written in turn
+      await window.handle.writeTo(write);
     }
   } finally {
     await sink.close();

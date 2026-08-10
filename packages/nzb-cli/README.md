@@ -198,8 +198,9 @@ So:
 - **Progress goes to stderr, the report to stdout,** so `--json | jq` and
   `> file` both work.
 - **`--connections` sets both the pool size and how many articles are fetched at
-  once.** Output stays in file order; only the fetching overlaps. A download
-  costs roughly `connections × article size` in memory — 32 MiB at the default
+  once.** A download writes each article at its true offset as it arrives, so a
+  slow article does not hold up the ones behind it, and the file on disk is
+  identical either way. It costs roughly `connections × article size` in memory — 32 MiB at the default
   of 4 against a 4 MiB post — regardless of how large the file is. Measured on a
   6.28 MiB / 20-article file: 12.85 s at 1, 6.70 s at 4, and no further gain at 8. Past a handful of connections the fetch is bandwidth-bound, not
   latency-bound.
