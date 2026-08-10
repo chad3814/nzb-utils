@@ -17,12 +17,15 @@
  *   NNTP_PASS=op://Private/Provider/password
  *
  * Optional: NNTP_SECURITY (implicit by default), NNTP_CONNECTIONS (4), and
- * NNTP_PROBE_CAP=1 to saturate the account's connection cap deliberately --
- * leave it off unless that is what you are testing.
+ * NNTP_PROBE_CAP=1 to add a check that deliberately saturates the account's
+ * connection limit. Leave the last one off unless that is what you are
+ * testing -- it opens as many connections as NNTP_CONNECTIONS asks for.
  *
- * Also optional, opt-in via NNTP2_HOST: a second provider (NNTP2_PORT/USER/
- * PASS/SECURITY/CONNECTIONS), proving the fill-the-gap path against a real
- * expired article -- most runs have one account; a second is a real purchase.
+ * Optional second provider, for proving the fill-the-gap path against a real
+ * expired article: NNTP2_HOST, NNTP2_PORT, NNTP2_USER, NNTP2_PASS, and
+ * optionally NNTP2_SECURITY (implicit by default) and NNTP2_CONNECTIONS (4).
+ * Present only when NNTP2_HOST is set -- most runs have one account, and a
+ * second is a real purchase.
  *
  * Credentials must arrive this way — injected into the environment by `op run`
  * — so they never enter a file, a transcript, or a shell history. As a backstop
@@ -49,6 +52,7 @@ import {
   retention,
   tailSlice,
 } from './checks.ts';
+import { capacity, fillsTheGap } from './server-checks.ts';
 
 const PREVIEW = 4 * 1024 * 1024;
 
@@ -72,7 +76,11 @@ function required(name: string): string {
   return value;
 }
 
-// Shared so endpoint() and secondServer() validate security the same way.
+/**
+ * Shared by `endpoint()` and `secondServer()`, so the primary and the second
+ * provider validate `*_SECURITY` the same way instead of drifting apart as
+ * one gets edited and the other does not.
+ */
 function security(envVar: string): 'implicit' | 'starttls' | 'none' {
   const value = process.env[envVar] ?? 'implicit';
   if (value !== 'implicit' && value !== 'starttls' && value !== 'none') {
@@ -89,12 +97,19 @@ function endpoint(): NntpEndpoint {
   };
 }
 
-// Opt-in like NNTP_PROBE_CAP: present only when NNTP2_HOST is set.
+/**
+ * The optional second provider.
+ *
+ * Present only when NNTP2_HOST is set. Opt-in in the same spirit as
+ * NNTP_PROBE_CAP: most runs have one account, and a second one is a real
+ * purchase.
+ */
 function secondServer(): NntpServerOptions | null {
   const host = process.env['NNTP2_HOST'];
   if (host === undefined || host === '') {
     return null;
   }
+
   return {
     name: host,
     endpoint: { host, port: Number(required('NNTP2_PORT')), security: security('NNTP2_SECURITY') },
@@ -135,78 +150,17 @@ say(
 );
 say(`groups: ${nzb.groups.join(', ')}`);
 
-/**
- * Ask for far more connections at once than the account allows, all in one
- * tick so every request reaches the pool before any can complete and free a
- * connection. Found this way: 200 requests against a 100-connection account
- * used to hang outright, because a refusal parked its caller without checking
- * for an already-idle connection. The property worth asserting is "all
- * settle", not "some fail".
- */
-async function capacity(
-  document: ReturnType<typeof parseNzb>,
-  connections: NntpPool,
-  want: number,
-): Promise<string> {
-  const id = document.files.flatMap((file) => file.segments)[0]?.messageId;
-  if (id === undefined) {
-    throw new Error('the NZB lists no segments');
-  }
-
-  const before = connections.failures.length;
-  const started = Date.now();
-  const results = await Promise.allSettled(
-    Array.from({ length: want }, () => connections.stat(id)),
-  );
-  const refused = connections.failures.length - before;
-  const rejected = results.filter((result) => result.status === 'rejected').length;
-
-  if (rejected > 0) {
-    throw new Error(`${String(rejected)} of ${String(want)} requests failed outright`);
-  }
-
-  return (
-    `${String(want)} concurrent requests all settled in ${String(Date.now() - started)} ms; ` +
-    `${String(refused)} refused, limit shrank ${String(want)} -> ${String(connections.limit)}`
-  );
-}
-
-/**
- * Fetch the article the primary no longer has. The Linux Journal .nfo has
- * returned 430 from Newshosting since 2026-08-08 -- a real expired article. If
- * the second provider lacks it too, that's a retention finding, not a bug, so
- * this reports rather than asserts.
- */
-async function fillsTheGap(
-  document: ReturnType<typeof parseNzb>,
-  multi: NntpMultiPool,
-): Promise<string> {
-  const missing = document.files.find((file) => file.subjectHints.name?.endsWith('.nfo') === true);
-  if (missing === undefined) {
-    return 'no .nfo in this NZB; nothing known to be missing';
-  }
-
-  const id = missing.segments[0]?.messageId;
-  if (id === undefined) {
-    throw new Error('the .nfo lists no segments');
-  }
-
-  const report = await multi.statAll(id);
-  const summary = report.map((entry) => `${entry.server}=${entry.status}`).join(' ');
-
-  if (!report.some((entry) => entry.status === 'present')) {
-    return `${summary}; gone from both, so no gap to fill`;
-  }
-
-  const response = await multi.body(id);
-  return `${summary}; served ${String(response.body.byteLength)} B by ${response.server ?? 'unknown'}`;
-}
-
 function connectionCount(): number {
   return Number(process.env['NNTP_CONNECTIONS'] ?? '4');
 }
 
-// The primary, reshaped to sit beside secondServer() in one NntpMultiPool.
+/**
+ * The primary, reshaped as a server entry.
+ *
+ * Reused both for the top-level `pool` below and for the `NntpMultiPool` the
+ * second-provider check builds, so the primary's credentials, endpoint and
+ * connection count are defined in exactly one place.
+ */
 function primaryServer(): NntpServerOptions {
   const host = endpoint();
   return {
@@ -218,9 +172,10 @@ function primaryServer(): NntpServerOptions {
 }
 
 const pool = new NntpPool({
-  // Providers rather than literals: nothing is read until a connection opens.
-  // No memoize() here on purpose -- the pool normalises and memoizes at its
-  // own boundary, and this harness exists partly to check that it does.
+  // Providers rather than literals, which is what the credential path is built
+  // for: nothing is read until a connection is actually opened. No memoize()
+  // here on purpose — the pool normalises and memoizes at its own boundary, and
+  // this harness exists partly to check that it does.
   ...primaryServer(),
   timeoutMs: 30_000,
 });
@@ -231,7 +186,8 @@ try {
     say(row);
   }
 
-  // Single-segment posts have no =ypart line -- nzb-file@1.1.18 throws a TypeError on this.
+  // Single-segment posts have no =ypart line at all, which is the case
+  // nzb-file@1.1.18 throws a TypeError on.
   const single = nzb.files.filter((file) => file.segments.length === 1);
   say(`\n-- ${String(single.length)} single-segment files (no =ypart line) --`);
   for (const file of single) {
@@ -257,7 +213,8 @@ try {
     await check('join across a segment boundary', () => boundaryJoin(largest, pool, handle));
   }
 
-  // Opt-in: rude and slow to do every run. Set NNTP_PROBE_CAP=1 with
+  // Opt-in: this deliberately trips the provider's connection cap, which is
+  // rude to do on every run and slow. Set NNTP_PROBE_CAP=1 with
   // NNTP_CONNECTIONS above your account's real limit.
   if (process.env['NNTP_PROBE_CAP'] === '1') {
     say('\n-- connection cap --');
@@ -280,8 +237,9 @@ try {
   }
 } finally {
   if (pool.failures.length > 0) {
-    // Grouped, not listed: a saturated 100-connection account produces a
-    // hundred identical refusals, better said as one line and a count.
+    // Grouped, not listed: saturating a 100-connection account produces a
+    // hundred identical refusals, and a hundred identical lines say no more
+    // than one line and a count.
     const byReason = new Map<string, number>();
     for (const failure of pool.failures) {
       byReason.set(failure.reason, (byReason.get(failure.reason) ?? 0) + 1);
@@ -296,5 +254,6 @@ try {
 }
 
 say(`\n${failures === 0 ? 'all checks passed' : `${String(failures)} check(s) failed`}`);
-// exitCode, not exit(): stdout to a pipe may still be draining.
+// exitCode rather than exit(): stdout to a pipe may still be draining, and a
+// harness that truncates its own report is worse than no harness.
 process.exitCode = failures === 0 ? 0 : 1;
