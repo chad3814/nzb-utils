@@ -240,9 +240,10 @@ connections`, shrinks its limit, and completes all 200 requests in ~12 s.
   refusal, which counts in-flight opens, so it can settle just above the true
   cap (101 against a cap of 100). The next refusal corrects it. Not worth making
   exact; do not write a test that asserts it equals the cap.
-- **`NntpConnectionFailure.at` is an attempt index, not a timestamp.**
-  `scripts/smoke.ts` printed it through `new Date()` and reported every refusal
-  as 1970. The name is poor; the field is an ordinal.
+- **`NntpConnectionFailure` counts attempts, it does not time them.**
+  `scripts/smoke.ts` printed the field through `new Date()` and reported every
+  refusal as 1970, because it was called `at`. Renamed to `attempt` in 1.2.0.
+  If a real timestamp is ever wanted, add one; do not overload this.
 
 ## Test fixtures
 
