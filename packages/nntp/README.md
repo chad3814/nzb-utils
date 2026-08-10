@@ -185,6 +185,60 @@ Two things worth knowing from that run:
 `scripts/smoke.ts` reproduces this against a real provider under
 `NNTP_PROBE_CAP=1`. It is opt-in because it deliberately saturates the account.
 
+## More than one server
+
+An article one provider has dropped is often still on another. `NntpMultiPool`
+takes an ordered list and reaches a later server only when an earlier one cannot
+supply the article — filling gaps, not aggregating bandwidth.
+
+```ts
+const pool = new NntpMultiPool({
+  servers: [
+    { name: 'primary', endpoint, credentials, connections: 20 },
+    { name: 'block', endpoint: other, credentials: blockCreds, connections: 8 },
+  ],
+});
+
+const { body, server } = await pool.body('abc123@news.example.com');
+```
+
+Servers are tried **sequentially**, and the reason is money: a second provider
+is usually a metered block account, and asking everyone at once would spend its
+bytes on every article the primary already had. For the same reason, taking
+overflow from a server that is at its connection cap is opt-in per server via
+`spillover`, and off by default — a metered account should pay for gaps, not
+for overflow the primary would have covered a moment later. `spillover` gates
+only that path; a genuine gap (a `430`) still falls through to a non-spillover
+server.
+
+| Outcome                                 | What happens                                                                                                                                                                                                                                           |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `430`                                   | A gap. Advance to the next server. Never counts against the server's health.                                                                                                                                                                           |
+| Timeout or connection loss              | Counted. Three in a row with no success between takes the server out of rotation for the life of the pool.                                                                                                                                             |
+| At the connection cap, nothing openable | Advance only to servers with `spillover: true`. When more than one server is saturated, the error surfaced is the **earliest** one's — the primary's cap is the actionable account, and a downstream server's cap is just where the walk gave up next. |
+| Auth refused on the primary             | Fatal, and sticky. Failing over would run a whole download on a backup because of a typo.                                                                                                                                                              |
+| Auth refused on any other server        | That server is marked down immediately, on the first strike — a wrong password will still be wrong next time.                                                                                                                                          |
+
+If every server answers `430`, the article is gone and a `430`
+`NntpProtocolError` is thrown, so callers that skip-and-report (`nzb get`) keep
+working. Any other mixture throws `NntpUnavailableError`, whose `attempts`
+names each server and its reason.
+
+`statAll(messageId)` reports per server, with three states rather than two:
+`present`, `absent` (the server said 430) and `unknown` (it could not be
+asked). `absent` and `unknown` are different facts, and only unanimous `absent`
+justifies giving up on a file.
+
+A third-party credential provider's error can end up here too, by the same
+route as `NntpUnavailableError`'s messages: `NntpServerStatus.downReason` and
+each failed attempt carry the provider's `error.message` unwrapped, per
+`resolveSecret`'s policy in `auth.ts` of letting a provider's rejection
+propagate rather than wrapping it. That is existing, deliberate behavior, not
+new — providers already own their own error hygiene. It is just newly visible
+here, across more than one server, and worth stating plainly for the
+`@chad3814/secret-provider-*` vault packages that are coming: a provider must
+not put the secret in the error it throws.
+
 ## Layout
 
 | Module               | Role                                                   |

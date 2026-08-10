@@ -1,3 +1,5 @@
+import { inspect } from 'node:util';
+
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { NntpMultiPool } from '../src/multi-pool.ts';
@@ -55,6 +57,15 @@ describe('NntpMultiPool construction', () => {
 
   it('rejects an empty server list', () => {
     expect(() => new NntpMultiPool({ servers: [] })).toThrow(/at least one/u);
+  });
+
+  it('keeps no credential on the multi-pool itself', async () => {
+    // Hard rule 3. The source-level scan in client.test.ts covers assignments;
+    // this covers the shape that would defeat it -- retaining the whole options
+    // object, credentials and all.
+    pool = new NntpMultiPool({ servers: [await provider('primary')] });
+
+    expect(inspect(pool, { showHidden: true, depth: 6 })).not.toContain('secret');
   });
 });
 
