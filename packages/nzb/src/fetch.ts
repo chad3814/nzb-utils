@@ -20,6 +20,13 @@ export interface FetchArticleOptions {
  * Two guards cover sources that are not multi-server: one that reports no
  * server has nothing to exclude, and one that ignores the exclusion is stopped
  * the moment it repeats itself.
+ *
+ * That termination is an assumption on the source, not a proof internal to
+ * this loop: it holds because a source draws `server` from a fixed, finite set
+ * of names. A source that invented a fresh name every call — a counter, a UUID
+ * — would never repeat and would never run out, so this would retry forever.
+ * Nothing here checks for that; it is a contract on {@link ArticleSource},
+ * not a case this function defends against.
  */
 export async function fetchArticle(
   source: ArticleSource,

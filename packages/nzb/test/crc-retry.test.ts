@@ -99,12 +99,23 @@ describe('fetchArticle', () => {
   });
 
   it('does not retry a malformed article, which is malformed everywhere', async () => {
+    // The mock reports a fixed `server: 'a'` on every call, same as the
+    // "ignores exclude" case above. So it is `calls` that proves the
+    // `instanceof YencChecksumError` gate did its job here: without it, a
+    // decode failure would retry once (hitting the `tried.includes('a')`
+    // guard) and still reject with the same YencDecodeError, and an assertion
+    // on the error type alone would not catch that regression.
+    let calls = 0;
     const source: ArticleSource = {
-      body: () => Promise.resolve({ body: Buffer.from('not yEnc at all\r\n'), server: 'a' }),
+      body: () => {
+        calls += 1;
+        return Promise.resolve({ body: Buffer.from('not yEnc at all\r\n'), server: 'a' });
+      },
     };
 
     await expect(fetchArticle(source, 'x@y', { verify: true })).rejects.toBeInstanceOf(
       YencDecodeError,
     );
+    expect(calls).toBe(1);
   });
 });
