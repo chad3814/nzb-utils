@@ -1,5 +1,5 @@
 import { NntpPool } from './pool.ts';
-import { NntpConnectionError, NntpProtocolError, NntpUnavailableError } from './errors.ts';
+import { NntpProtocolError, NntpUnavailableError } from './errors.ts';
 import type { NntpArticleResponse, NntpResponse } from './models.ts';
 import type {
   ArticleFetchOptions,
@@ -50,21 +50,25 @@ export class NntpMultiPool {
         name,
         spillover: server.spillover ?? false,
         pool: new NntpPool(server),
-        state: 'ready',
-        downReason: null,
+        down: null,
         consecutiveFailures: 0,
       };
     });
   }
 
   get servers(): readonly NntpServerStatus[] {
-    return this.#servers.map((entry) => ({
-      name: entry.name,
-      state: entry.state,
-      downReason: entry.downReason,
-      limit: entry.pool.limit,
-      failures: entry.pool.failures,
-    }));
+    return this.#servers.map((entry): NntpServerStatus => {
+      // `state` and `downReason` are two views of one field. See ServerEntry
+      // for why the entry does not carry them separately.
+      const { down } = entry;
+      return {
+        name: entry.name,
+        state: down === null ? 'ready' : 'down',
+        downReason: down,
+        limit: entry.pool.limit,
+        failures: entry.pool.failures,
+      };
+    });
   }
 
   destroy(): void {
@@ -123,12 +127,8 @@ export class NntpMultiPool {
 
     return await Promise.all(
       this.#servers.map(async (entry): Promise<NntpServerStat> => {
-        if (entry.state === 'down') {
-          return {
-            server: entry.name,
-            status: 'unknown',
-            reason: entry.downReason ?? new NntpConnectionError(`${entry.name} is marked down`),
-          };
+        if (entry.down !== null) {
+          return { server: entry.name, status: 'unknown', reason: entry.down };
         }
 
         try {
@@ -175,7 +175,7 @@ export class NntpMultiPool {
     const walk: WalkState = { requireSpillover: false, firstCapacityError: null, attempts: [] };
 
     for (const entry of this.#servers) {
-      if (entry.state === 'down' || excluded.has(entry.name)) {
+      if (entry.down !== null || excluded.has(entry.name)) {
         continue;
       }
       if (walk.requireSpillover && !entry.spillover) {

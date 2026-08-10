@@ -18,8 +18,18 @@ export interface ServerEntry {
   readonly name: string;
   readonly spillover: boolean;
   readonly pool: NntpPool;
-  state: 'ready' | 'down';
-  downReason: Error | null;
+  /**
+   * Why this server left the rotation, or null while it is still in it.
+   *
+   * One nullable field rather than a `state: 'ready' | 'down'` alongside a
+   * separate `downReason`, because that pair can express "down for no reason".
+   * {@link markDown} is the only writer and always supplies a reason, so that
+   * state is unreachable — but every reader still had to handle it, and
+   * `statAll`'s `downReason ?? new NntpConnectionError(...)` was exactly that
+   * handling: dead code that read as a real case. The public
+   * `NntpServerStatus` keeps both fields; they are derived from this one.
+   */
+  down: Error | null;
   consecutiveFailures: number;
 }
 
@@ -44,8 +54,7 @@ export type FailureRuling =
   { readonly kind: 'skip' } | { readonly kind: 'fatal'; readonly error: NntpAuthError };
 
 function markDown(entry: ServerEntry, reason: Error): void {
-  entry.state = 'down';
-  entry.downReason = reason;
+  entry.down = reason;
 }
 
 /** Timeout, connection loss, or an unexpected status: transient until it is not. */
@@ -72,8 +81,8 @@ function recordConnectionFailure(entry: ServerEntry, reason: Error): void {
  * path. It records first anyway, purely so this stays one push instead of
  * several call sites each doing their own.
  *
- * Mutates `entry` -- incrementing `consecutiveFailures`, setting
- * `state`/`downReason` -- which is fine because `entry` is passed in rather
+ * Mutates `entry` -- incrementing `consecutiveFailures`, setting `down`
+ * -- which is fine because `entry` is passed in rather
  * than reached for through `this`. This function never touches a pool, and
  * never touches `#fatal`; a `fatal` ruling only reports the auth error back
  * to `#run`, which is the one place with the authority to set it and throw.
