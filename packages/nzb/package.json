@@ -1,6 +1,6 @@
 {
   "name": "@chad3814/nzb",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "W3C File-like access to NZB contents with range-accurate segment fetching",
   "keywords": [
     "nzb",
@@ -44,7 +44,7 @@
     "prepack": "node ../../scripts/assert-built.mjs"
   },
   "dependencies": {
-    "@chad3814/nzb-parser": "^1.1.0",
-    "@chad3814/yenc": "^1.1.0"
+    "@chad3814/nzb-parser": "^1.2.0",
+    "@chad3814/yenc": "^1.2.0"
   }
 }

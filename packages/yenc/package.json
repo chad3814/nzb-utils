@@ -1,6 +1,6 @@
 {
   "name": "@chad3814/yenc",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Pure-TypeScript yEnc decoder with header parsing and CRC32 verification",
   "keywords": [
     "yenc",

@@ -1,6 +1,6 @@
 {
   "name": "@chad3814/nzb-cli",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Command-line tool to inspect NZBs and download some or all of their contents",
   "keywords": [
     "nzb",
@@ -42,12 +42,12 @@
     "prepack": "node ../../scripts/assert-built.mjs"
   },
   "dependencies": {
-    "@chad3814/nntp": "^1.1.0",
-    "@chad3814/nzb": "^1.1.0",
-    "@chad3814/nzb-parser": "^1.1.0",
-    "@chad3814/par2": "^1.1.0",
+    "@chad3814/nntp": "^1.2.0",
+    "@chad3814/nzb": "^1.2.0",
+    "@chad3814/nzb-parser": "^1.2.0",
+    "@chad3814/par2": "^1.2.0",
     "@chad3814/secret-provider": "^1.2.0",
-    "@chad3814/yenc": "^1.1.0"
+    "@chad3814/yenc": "^1.2.0"
   },
   "bin": {
     "nzb": "dist/bin.js"
