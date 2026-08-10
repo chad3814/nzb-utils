@@ -216,7 +216,14 @@ describe('NntpMultiPool with a bad server', () => {
     });
 
     await expect(pool.body('a@b')).rejects.toBeInstanceOf(NntpAuthError);
+    const afterFirst = servers[0]?.commands.length ?? 0;
+
     await expect(pool.body('b@b')).rejects.toBeInstanceOf(NntpAuthError);
+
+    // The primary is not contacted again at all, not merely refused again --
+    // without stickiness, the second call would retry the primary and hit the
+    // same refusal, which every assertion below would also be true of.
+    expect(servers[0]?.commands.length).toBe(afterFirst);
     expect(servers[1]?.commands).toEqual([]);
   });
 
@@ -244,15 +251,19 @@ describe('NntpMultiPool with a bad server', () => {
   it('leaves a server up when its failures are not consecutive', async () => {
     // A fake that accepts the connection and then refuses every command with a
     // 400 forces the pool to discard the connection and the multi-pool to count
-    // a connection-level failure.
-    let refusals = 0;
+    // a connection-level failure. Scripted fail, fail, succeed, fail, fail: two
+    // failures alone would pass whether or not success resets the count, since
+    // two is already below the threshold of three. Only the trailing pair makes
+    // the reset load-bearing -- without it, attempt four stacks onto the first
+    // two for three consecutive failures and the server goes down.
+    let attempt = 0;
     const flaky = await startFakeServer({
       respond: (command) => {
         if (command.startsWith('AUTHINFO PASS')) return '281 authentication accepted\r\n';
         if (command.startsWith('AUTHINFO')) return '381 password required\r\n';
         if (command.startsWith('BODY')) {
-          refusals += 1;
-          return refusals === 3
+          attempt += 1;
+          return attempt === 3
             ? '222 0 <a@b> body follows\r\nhello\r\n.\r\n'
             : '400 unavailable\r\n';
         }
@@ -279,6 +290,10 @@ describe('NntpMultiPool with a bad server', () => {
     await pool.body('b@b');
     // third call succeeds on flaky, resetting the count
     await pool.body('c@b');
+    // fourth and fifth calls fail again; without the reset above, this is a
+    // third *consecutive* failure and would take flaky down
+    await pool.body('d@b');
+    await pool.body('e@b');
 
     expect(pool.servers[0]?.state).toBe('ready');
   });
