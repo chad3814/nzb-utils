@@ -38,6 +38,11 @@ export interface NntpPoolOptions {
 
 /** Why one connection attempt failed, kept per attempt rather than merged. */
 export interface NntpConnectionFailure {
+  /**
+   * 0-based index of this attempt among the recorded failures — an ordinal,
+   * **not** a timestamp. Named badly enough that `scripts/smoke.ts` printed it
+   * through `new Date()` and reported every refusal as 1970.
+   */
   readonly at: number;
   readonly reason: string;
 }
@@ -56,6 +61,12 @@ export interface NntpConnectionFailure {
  *    a DNS failure are indistinguishable. Here the originating error
  *    propagates and {@link failures} keeps the history.
  */
+/** A caller parked until a connection frees up. */
+interface Waiter {
+  readonly resolve: (client: NntpClient) => void;
+  readonly reject: (error: unknown) => void;
+}
+
 export class NntpPool {
   readonly #endpoint: NntpEndpoint;
   #limit: number;
@@ -70,7 +81,14 @@ export class NntpPool {
   readonly #login: CredentialProviders;
 
   readonly #idle: NntpClient[] = [];
-  readonly #waiting: ((client: NntpClient) => void)[] = [];
+  /**
+   * Callers parked until a connection frees up.
+   *
+   * Rejectable, not just resolvable: a parked caller is only ever woken by a
+   * connection being released, so when the pool can no longer release one the
+   * wait has to end in an error rather than never ending.
+   */
+  readonly #waiting: Waiter[] = [];
   readonly #failures: NntpConnectionFailure[] = [];
 
   #open = 0;
@@ -110,6 +128,8 @@ export class NntpPool {
       client.destroy();
     }
     this.#open = 0;
+    // Anyone parked is waiting for a release that is now never coming.
+    this.#failWaiting(new NntpConnectionError('pool has been destroyed'));
   }
 
   async #withConnection<T>(run: (client: NntpClient) => Promise<T>): Promise<T> {
@@ -158,6 +178,12 @@ export class NntpPool {
           return this.#waitForConnection();
         }
 
+        if (this.#open === 0 && this.#idle.length === 0) {
+          // This was the last chance of a connection, so nothing remains that
+          // could wake anyone parked behind it.
+          this.#failWaiting(error);
+        }
+
         throw error;
       }
     }
@@ -171,9 +197,26 @@ export class NntpPool {
   }
 
   #waitForConnection(): Promise<NntpClient> {
-    return new Promise<NntpClient>((resolve) => {
-      this.#waiting.push(resolve);
+    // Take an idle connection if one is sitting there. Parking without looking
+    // is what deadlocked 200 concurrent requests against a 100-connection
+    // account: every open starts before any completes, so the connections that
+    // succeeded had finished their work and gone idle while the refusals were
+    // still arriving, and there was nothing left running to wake the parked.
+    const idle = this.#idle.pop();
+    if (idle !== undefined) {
+      return Promise.resolve(idle);
+    }
+
+    return new Promise<NntpClient>((resolve, reject) => {
+      this.#waiting.push({ resolve, reject });
     });
+  }
+
+  /** End every parked wait with an error, because no wake-up is coming. */
+  #failWaiting(error: unknown): void {
+    for (const waiter of this.#waiting.splice(0)) {
+      waiter.reject(error);
+    }
   }
 
   async #openConnection(): Promise<NntpClient> {
@@ -200,7 +243,7 @@ export class NntpPool {
       this.#idle.push(client);
       return;
     }
-    next(client);
+    next.resolve(client);
   }
 
   #discard(client: NntpClient): void {
@@ -218,14 +261,29 @@ export class NntpPool {
     void this.#replaceFor(next);
   }
 
-  async #replaceFor(waiter: (client: NntpClient) => void): Promise<void> {
+  async #replaceFor(waiter: Waiter): Promise<void> {
     try {
-      waiter(await this.#openConnection());
+      waiter.resolve(await this.#openConnection());
     } catch (error) {
       this.#open -= 1;
       this.#record(error);
-      // Re-queue the waiter so a later successful acquire can serve it; the
-      // caller's own timeout bounds the wait.
+
+      const idle = this.#idle.pop();
+      if (idle !== undefined) {
+        waiter.resolve(idle);
+        return;
+      }
+
+      if (this.#open === 0) {
+        // No connection is live and none can be opened, so re-queueing would
+        // park this caller on a release that cannot happen.
+        waiter.reject(error);
+        this.#failWaiting(error);
+        return;
+      }
+
+      // Something is still running and will release; the caller's own timeout
+      // bounds the wait.
       this.#waiting.unshift(waiter);
     }
   }

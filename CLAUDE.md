@@ -216,6 +216,34 @@ articles, 7.2 MiB, non-obfuscated names, posted 2017.
   `scripts/checks.ts` had exactly that bug and compared unrelated stretches of
   file because a negative `subarray` index counts from the end.
 
+## Real-world findings (2026-08-10, saturating the connection cap)
+
+Found by deliberately setting `NNTP_CONNECTIONS=200` on a 100-connection
+Newshosting account and firing every request in one tick.
+
+- **The account cap is 100.** `NntpPool` takes ~100 × `502 Too many
+connections`, shrinks its limit, and completes all 200 requests in ~12 s.
+- **A connection count is a ceiling, not an allocation.** Setting it to 200
+  changed nothing about a normal run: the pool opens only what concurrent work
+  demands, and this NZB has 27 articles with the library's prefetch capped at 4.
+  Reaching the cap needs work that is genuinely that wide.
+- **Saturation deadlocked the pool, and nothing smaller found it.** Every open
+  starts before any completes, so the successful connections finished and went
+  idle while refusals were still arriving; the refusal path parked its caller
+  without checking the idle list, and no work remained to wake it. 200 requests
+  hung with no error. 40 requests against a cap of 10 pass — the interleaving
+  does not happen at that size. Parked callers now check for an idle connection
+  first, and are rejectable so the pool can fail them when it provably cannot
+  serve them (no live connections, none openable, or destroyed). Do not
+  reintroduce a wait that has only a `resolve`.
+- **The shrunk limit is approximate.** It is set to `#open` at the moment of a
+  refusal, which counts in-flight opens, so it can settle just above the true
+  cap (101 against a cap of 100). The next refusal corrects it. Not worth making
+  exact; do not write a test that asserts it equals the cap.
+- **`NntpConnectionFailure.at` is an attempt index, not a timestamp.**
+  `scripts/smoke.ts` printed it through `new Date()` and reported every refusal
+  as 1970. The name is poor; the field is an ordinal.
+
 ## Test fixtures
 
 Synthetic only, for now. Fixtures are hand-authored NZB documents covering one

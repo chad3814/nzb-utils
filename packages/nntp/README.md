@@ -141,12 +141,49 @@ retain the resolved value; see above.
 - **A failed connection is discarded, not re-enqueued.** The reference pool
   returns connections in a `finally` with no health check and then hands the
   same dead socket out repeatedly.
+- **A caller waiting for a connection can always be woken, or told why not.**
+  Parked callers are resolved _or rejected_, and parking happens only after
+  checking for a connection that has already gone idle. Both matter at
+  saturation: see below.
 - **Every command has a deadline.** The reference implementation has no timeouts
   anywhere.
 - **Message-IDs are wrapped.** NZBs store them bare and the protocol requires
   angle brackets; forgetting is a `430` on every article.
 - **Payloads stay `Buffer`.** Usenet is 8-bit clean. Only status lines become
   strings, as `latin1`.
+
+## At a provider's connection cap
+
+`502 Too many connections` is not an authentication failure, and treating it as
+one sends people to rotate a working password. It raises `NntpCapacityError`,
+and the pool responds by shrinking `limit` to what the account actually gives
+and running the work on the connections it has, rather than failing requests
+that are perfectly fetchable.
+
+Measured against a real 100-connection account, asking for 200 at once:
+
+```
+200 concurrent requests all settled in 11.9 s; 99 refused, limit shrank 200 -> 101
+```
+
+Two things worth knowing from that run:
+
+- **The shrunk limit is approximate, and self-correcting.** It is set to the
+  number of connections open at the moment of a refusal, which counts opens
+  still in flight, so it can land a little above the true cap. The next refusal
+  brings it down again.
+- **Saturation is where pool liveness actually gets tested.** Every open starts
+  before any completes, so the connections that succeed finish their work and go
+  _idle_ while the refusals are still arriving. An earlier version parked the
+  refused callers without looking at the idle list, and nothing was left running
+  to wake them: 200 concurrent requests hung with no error and no work in
+  flight. Parking now checks for an idle connection first, and a parked caller
+  is failed outright when the pool provably cannot serve it — no live
+  connections, none openable, or destroyed. At 40 requests against a cap of 10
+  the interleaving does not occur, which is why it took a live account to find.
+
+`scripts/smoke.ts` reproduces this against a real provider under
+`NNTP_PROBE_CAP=1`. It is opt-in because it deliberately saturates the account.
 
 ## Layout
 

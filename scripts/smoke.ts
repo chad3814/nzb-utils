@@ -16,6 +16,11 @@
  *   NNTP_USER=op://Private/Provider/username
  *   NNTP_PASS=op://Private/Provider/password
  *
+ * Optional: NNTP_SECURITY (implicit by default), NNTP_CONNECTIONS (4), and
+ * NNTP_PROBE_CAP=1 to add a check that deliberately saturates the account's
+ * connection limit. Leave the last one off unless that is what you are
+ * testing -- it opens as many connections as NNTP_CONNECTIONS asks for.
+ *
  * Credentials must arrive this way — injected into the environment by `op run`
  * — so they never enter a file, a transcript, or a shell history. As a backstop
  * every line of output goes through `scrub()`: if a credential ever did reach
@@ -104,6 +109,48 @@ say(
 );
 say(`groups: ${nzb.groups.join(', ')}`);
 
+/**
+ * Ask for far more connections at once than the account allows.
+ *
+ * Every request is started in one tick, so all of them reach the pool before
+ * any can complete and free a connection — which is what forces the opens.
+ * Found this way: 200 concurrent requests against a 100-connection account
+ * used to hang outright, because a refusal parked its caller without checking
+ * whether a connection had already gone idle, and nothing was left running to
+ * wake it. The property worth asserting is not "some fail" but "all settle".
+ */
+async function capacity(
+  document: ReturnType<typeof parseNzb>,
+  connections: NntpPool,
+  want: number,
+): Promise<string> {
+  const id = document.files.flatMap((file) => file.segments)[0]?.messageId;
+  if (id === undefined) {
+    throw new Error('the NZB lists no segments');
+  }
+
+  const before = connections.failures.length;
+  const started = Date.now();
+  const results = await Promise.allSettled(
+    Array.from({ length: want }, () => connections.stat(id)),
+  );
+  const refused = connections.failures.length - before;
+  const rejected = results.filter((result) => result.status === 'rejected').length;
+
+  if (rejected > 0) {
+    throw new Error(`${String(rejected)} of ${String(want)} requests failed outright`);
+  }
+
+  return (
+    `${String(want)} concurrent requests all settled in ${String(Date.now() - started)} ms; ` +
+    `${String(refused)} refused, limit shrank ${String(want)} -> ${String(connections.limit)}`
+  );
+}
+
+function connectionCount(): number {
+  return Number(process.env['NNTP_CONNECTIONS'] ?? '4');
+}
+
 const pool = new NntpPool({
   // Providers rather than literals, which is what the credential path is built
   // for: nothing is read until a connection is actually opened. No memoize()
@@ -111,7 +158,7 @@ const pool = new NntpPool({
   // this harness exists partly to check that it does.
   credentials: { user: fromEnv('NNTP_USER'), pass: fromEnv('NNTP_PASS') },
   endpoint: endpoint(),
-  connections: Number(process.env['NNTP_CONNECTIONS'] ?? '4'),
+  connections: connectionCount(),
   timeoutMs: 30_000,
 });
 
@@ -147,11 +194,29 @@ try {
   if (largest.segments.length >= 3) {
     await check('join across a segment boundary', () => boundaryJoin(largest, pool, handle));
   }
+
+  // Opt-in: this deliberately trips the provider's connection cap, which is
+  // rude to do on every run and slow. Set NNTP_PROBE_CAP=1 with
+  // NNTP_CONNECTIONS above your account's real limit.
+  if (process.env['NNTP_PROBE_CAP'] === '1') {
+    say('\n-- connection cap --');
+    await check('saturating the account settles every request', () =>
+      capacity(nzb, pool, connectionCount()),
+    );
+  }
 } finally {
   if (pool.failures.length > 0) {
-    say(`\nconnection failures (${String(pool.failures.length)}):`);
+    // Grouped, not listed: saturating a 100-connection account produces a
+    // hundred identical refusals, and a hundred identical lines say no more
+    // than one line and a count.
+    const byReason = new Map<string, number>();
     for (const failure of pool.failures) {
-      say(`  ${new Date(failure.at).toISOString()}  ${failure.reason}`);
+      byReason.set(failure.reason, (byReason.get(failure.reason) ?? 0) + 1);
+    }
+
+    say(`\nconnection failures (${String(pool.failures.length)}):`);
+    for (const [reason, count] of byReason) {
+      say(`  ${String(count)} x ${reason}`);
     }
   }
   pool.destroy();

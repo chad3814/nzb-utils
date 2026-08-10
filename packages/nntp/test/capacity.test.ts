@@ -142,6 +142,86 @@ describe('NntpPool against a capped provider', () => {
     );
   });
 
+  it('settles every request when demand far exceeds the cap', async () => {
+    // Found live: 200 concurrent requests against a 100-connection account
+    // hung with no error and no work in flight. Every open is started before
+    // any completes, so the first connections finish and go *idle* while the
+    // refusals are still arriving — and a refusal parked its caller without
+    // ever looking at the idle list. Nothing was left running to wake them.
+    server = await startFakeServer({ respond: cappedServer(100) });
+    pool = new NntpPool({
+      endpoint: { host: '127.0.0.1', port: server.port, security: 'none' },
+      credentials: { user: 'someone', pass: 'secret' },
+      connections: 200,
+    });
+
+    const bodies = await Promise.all(
+      Array.from({ length: 200 }, (_, index) => pool?.body(`a${String(index)}@b`)),
+    );
+
+    expect(bodies).toHaveLength(200);
+    expect(bodies.every((response) => response?.body.toString('latin1') === 'hello\r\n')).toBe(
+      true,
+    );
+  }, 20_000);
+
+  it('fails parked callers rather than hanging when the pool loses every connection', async () => {
+    // A waiter can only ever be woken by a connection being released. If the
+    // last live connection dies and its replacement is refused, no wake-up is
+    // coming, so the wait has to end in an error instead of forever.
+    let logins = 0;
+    server = await startFakeServer({
+      respond: (command) => {
+        if (command.startsWith('AUTHINFO USER')) {
+          logins += 1;
+          return logins > 1 ? '502 Too many connections.\r\n' : '381 password required\r\n';
+        }
+        if (command.startsWith('AUTHINFO PASS')) {
+          return '281 authentication accepted\r\n';
+        }
+        // The one live connection answers unusably, so the pool discards it.
+        return '400 service temporarily unavailable\r\n';
+      },
+    });
+    pool = new NntpPool({
+      endpoint: { host: '127.0.0.1', port: server.port, security: 'none' },
+      credentials: { user: 'someone', pass: 'secret' },
+      connections: 4,
+    });
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 4 }, (_, index) => pool?.body(`a${String(index)}@b`)),
+    );
+
+    expect(results).toHaveLength(4);
+    expect(results.every((result) => result.status === 'rejected')).toBe(true);
+  }, 20_000);
+
+  it('fails parked callers when the pool is destroyed under them', async () => {
+    // Otherwise `destroy()` in a finally block leaves the process alive with
+    // promises that can never settle.
+    server = await startFakeServer({ respond: cappedServer(1) });
+    const capped = new NntpPool({
+      endpoint: { host: '127.0.0.1', port: server.port, security: 'none' },
+      credentials: { user: 'someone', pass: 'secret' },
+      connections: 4,
+    });
+
+    const inFlight = Promise.allSettled([
+      capped.body('a@b'),
+      capped.body('b@b'),
+      capped.body('c@b'),
+      capped.body('d@b'),
+    ]);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+    capped.destroy();
+
+    const results = await inFlight;
+    expect(results).toHaveLength(4);
+  }, 20_000);
+
   it('still fails when not one connection can be opened', async () => {
     // Degrading needs something to degrade to. With nothing live, the caller
     // has to hear about it.
