@@ -1,12 +1,5 @@
 import { NntpPool } from './pool.ts';
-import {
-  NntpAuthError,
-  NntpCapacityError,
-  NntpConnectionError,
-  NntpProtocolError,
-  NntpUnavailableError,
-} from './errors.ts';
-import type { NntpServerAttempt } from './errors.ts';
+import { NntpConnectionError, NntpProtocolError, NntpUnavailableError } from './errors.ts';
 import type { NntpArticleResponse, NntpResponse } from './models.ts';
 import type {
   ArticleFetchOptions,
@@ -14,35 +7,8 @@ import type {
   NntpServerStat,
   NntpServerStatus,
 } from './multi-pool-models.ts';
-
-/**
- * Consecutive connection-level failures before a server leaves the rotation.
- *
- * Three, not one: a timeout on a single article is a bad moment, not a dead
- * provider. An auth failure bypasses this entirely -- it is deterministic.
- */
-const DOWN_AFTER = 3;
-
-/** Mutable per-server state. Deliberately holds no credential — see below. */
-interface ServerEntry {
-  readonly name: string;
-  readonly spillover: boolean;
-  readonly pool: NntpPool;
-  state: 'ready' | 'down';
-  downReason: Error | null;
-  consecutiveFailures: number;
-}
-
-/**
- * State threaded through one `#run` walk, bundled so it can be passed to the
- * failure-classification helper instead of living as several loop locals.
- */
-interface WalkState {
-  requireSpillover: boolean;
-  firstCapacityError: NntpCapacityError | null;
-  /** Every server actually tried this walk, in order, with why it failed. */
-  attempts: NntpServerAttempt[];
-}
+import { rule } from './multi-pool-failure.ts';
+import type { ServerEntry, WalkState } from './multi-pool-failure.ts';
 
 /**
  * An ordered list of servers, tried in turn.
@@ -107,79 +73,17 @@ export class NntpMultiPool {
     }
   }
 
-  #markDown(entry: ServerEntry, reason: Error): void {
-    entry.state = 'down';
-    entry.downReason = reason;
-  }
-
   /**
-   * Split out of `#run` to stay under the file's max-lines-per-function limit,
-   * not for reuse -- there is exactly one call site.
+   * Apply `rule`'s verdict for one candidate's failure. `rule` decides, this
+   * method acts: it is the one place with access to `#fatal` and the
+   * authority to fail every walk, not just this one.
    */
-  #handleAuthFailure(entry: ServerEntry, error: NntpAuthError): void {
-    if (entry === this.#servers[0]) {
-      // The server you always use must be right. Failing over would run
-      // the whole job on a backup because of a typo.
-      this.#fatal = error;
-      throw error;
+  #applyRuling(entry: ServerEntry, error: unknown, walk: WalkState): void {
+    const ruling = rule(entry, error, walk, entry === this.#servers[0]);
+    if (ruling.kind === 'fatal') {
+      this.#fatal = ruling.error;
+      throw ruling.error;
     }
-    // A backup that cannot log in is treated like one that is unreachable,
-    // so a stale token does not abort a nearly-finished download. One
-    // strike, because the outcome is deterministic.
-    this.#markDown(entry, error);
-  }
-
-  /** Timeout, connection loss, or an unexpected status: transient until it is not. */
-  #recordConnectionFailure(entry: ServerEntry, reason: Error): void {
-    entry.consecutiveFailures += 1;
-    if (entry.consecutiveFailures >= DOWN_AFTER) {
-      this.#markDown(entry, reason);
-    }
-  }
-
-  /**
-   * Classify one candidate's failure and update the walk's shared state.
-   * Split out of `#run` to stay under the file's max-lines-per-function limit.
-   *
-   * Records the attempt before classifying, and unconditionally -- including
-   * the 430 branch -- so that `walk.attempts` reflects every server actually
-   * tried this walk, not just the ones that failed for a reason worth acting
-   * on. That is what lets `#run` tell "every server said 430" from "we could
-   * not find out" once the walk ends, and what stops an error type
-   * `#handleFailure` has never seen before (a bug, not a protocol response)
-   * from being silently folded into that same fallback. The fatal
-   * primary-auth throw below also records first, but not for that reason --
-   * the throw leaves `#run` immediately and nothing ever reads
-   * `walk.attempts` on that path. It records first anyway, purely so this
-   * stays one push instead of four call sites each doing their own.
-   *
-   * May throw: an auth failure on the primary is fatal, see
-   * {@link #handleAuthFailure}. Everything else is recorded and swallowed so
-   * the walk can move on to the next candidate.
-   */
-  #handleFailure(entry: ServerEntry, error: unknown, walk: WalkState): void {
-    const reason = error instanceof Error ? error : new Error(String(error));
-    walk.attempts.push({ server: entry.name, reason });
-
-    if (reason instanceof NntpProtocolError && reason.code === 430) {
-      // A gap, not a fault: this server does not have this article, which
-      // says nothing about its health.
-      return;
-    }
-    if (reason instanceof NntpCapacityError) {
-      // Only reaches here when the pool could open no connection at all; a
-      // partial cap is absorbed by the pool shrinking and queueing.
-      walk.requireSpillover = true;
-      if (walk.firstCapacityError === null) {
-        walk.firstCapacityError = reason;
-      }
-      return;
-    }
-    if (reason instanceof NntpAuthError) {
-      this.#handleAuthFailure(entry, reason);
-      return;
-    }
-    this.#recordConnectionFailure(entry, reason);
   }
 
   async body(messageId: string, options?: ArticleFetchOptions): Promise<NntpArticleResponse> {
@@ -203,21 +107,30 @@ export class NntpMultiPool {
   }
 
   /**
-   * Ask every server whether it has the article. Concurrent, unlike `#run`:
-   * STAT costs a round trip and no meaningful bytes, so spillover need not
-   * gate it. Diagnostic only -- never marks a server down or touches
-   * `consecutiveFailures`; a server already `down` is reported `unknown`
-   * with its recorded reason, not omitted.
+   * Ask every server whether it has the article.
+   *
+   * Concurrent, because STAT transfers no body: it costs a round trip and no
+   * meaningful bytes, so it is not gated by {@link NntpServerOptions.spillover}
+   * the way a download is. Purely diagnostic -- it never marks a server down
+   * and never counts toward the failure threshold. A server already marked
+   * down is still reported, as `unknown` with its recorded reason, rather
+   * than omitted -- the caller asked about every server.
    */
   async statAll(messageId: string): Promise<readonly NntpServerStat[]> {
-    if (this.#fatal !== null) throw this.#fatal;
+    if (this.#fatal !== null) {
+      throw this.#fatal;
+    }
 
     return await Promise.all(
       this.#servers.map(async (entry): Promise<NntpServerStat> => {
         if (entry.state === 'down') {
-          const reason = entry.downReason ?? new NntpConnectionError(`${entry.name} is down`);
-          return { server: entry.name, status: 'unknown', reason };
+          return {
+            server: entry.name,
+            status: 'unknown',
+            reason: entry.downReason ?? new NntpConnectionError(`${entry.name} is marked down`),
+          };
         }
+
         try {
           await entry.pool.stat(messageId);
           return { server: entry.name, status: 'present' };
@@ -225,8 +138,11 @@ export class NntpMultiPool {
           if (error instanceof NntpProtocolError && error.code === 430) {
             return { server: entry.name, status: 'absent' };
           }
-          const reason = error instanceof Error ? error : new Error(String(error));
-          return { server: entry.name, status: 'unknown', reason };
+          return {
+            server: entry.name,
+            status: 'unknown',
+            reason: error instanceof Error ? error : new Error(String(error)),
+          };
         }
       }),
     );
@@ -245,7 +161,7 @@ export class NntpMultiPool {
    * saturated server's error, because that account is the actionable one -- a
    * later server's cap (typically a backup/block account) is downstream noise
    * once the walk is already in overflow, and must never overwrite it. Failure
-   * classification itself lives in {@link #handleFailure}.
+   * classification itself lives in {@link rule}, in multi-pool-failure.ts.
    */
   async #run<T extends NntpResponse>(
     options: ArticleFetchOptions | undefined,
@@ -274,7 +190,7 @@ export class NntpMultiPool {
         entry.consecutiveFailures = 0;
         return { response, server: entry.name };
       } catch (error) {
-        this.#handleFailure(entry, error, walk);
+        this.#applyRuling(entry, error, walk);
       }
     }
 
