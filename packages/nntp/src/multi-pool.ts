@@ -1,6 +1,8 @@
 import { NntpPool } from './pool.ts';
 import type { NntpPoolOptions } from './pool.ts';
+import { NntpProtocolError } from './errors.ts';
 import type { NntpConnectionFailure } from './errors.ts';
+import type { NntpArticleResponse, NntpResponse } from './models.ts';
 
 /**
  * One server in an ordered list.
@@ -111,5 +113,62 @@ export class NntpMultiPool {
     for (const entry of this.#servers) {
       entry.pool.destroy();
     }
+  }
+
+  async body(messageId: string, options?: ArticleFetchOptions): Promise<NntpArticleResponse> {
+    const { response, server } = await this.#run(options, (pool) => pool.body(messageId));
+    return { ...response, server };
+  }
+
+  async head(messageId: string, options?: ArticleFetchOptions): Promise<NntpArticleResponse> {
+    const { response, server } = await this.#run(options, (pool) => pool.head(messageId));
+    return { ...response, server };
+  }
+
+  async article(messageId: string, options?: ArticleFetchOptions): Promise<NntpArticleResponse> {
+    const { response, server } = await this.#run(options, (pool) => pool.article(messageId));
+    return { ...response, server };
+  }
+
+  async stat(messageId: string, options?: ArticleFetchOptions): Promise<NntpResponse> {
+    const { response, server } = await this.#run(options, (pool) => pool.stat(messageId));
+    return { ...response, server };
+  }
+
+  /**
+   * Walk the candidates in order until one answers.
+   *
+   * Returns the raw response alongside the name rather than merging them here:
+   * spreading a generic `T` does not typecheck as `T`, and each caller knows its
+   * own concrete response type.
+   */
+  async #run<T extends NntpResponse>(
+    options: ArticleFetchOptions | undefined,
+    call: (pool: NntpPool) => Promise<T>,
+  ): Promise<{ response: T; server: string }> {
+    const excluded = new Set(options?.exclude ?? []);
+
+    for (const entry of this.#servers) {
+      if (entry.state === 'down' || excluded.has(entry.name)) {
+        continue;
+      }
+
+      try {
+        /* oxlint-disable-next-line no-await-in-loop -- sequential is the point:
+           asking every server at once would spend backup bytes on every article */
+        const response = await call(entry.pool);
+        entry.consecutiveFailures = 0;
+        return { response, server: entry.name };
+      } catch (error) {
+        if (error instanceof NntpProtocolError && error.code === 430) {
+          // A gap, not a fault: this server does not have this article, which
+          // says nothing about its health.
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw new NntpProtocolError(430, 'No Such Article on any configured server');
   }
 }
