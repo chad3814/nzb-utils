@@ -2,9 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { NntpMultiPool } from '../src/multi-pool.ts';
 import type { NntpServerOptions } from '../src/multi-pool.ts';
-import { NntpCapacityError } from '../src/errors.ts';
+import { NntpAuthError, NntpCapacityError } from '../src/errors.ts';
 import { provider as startProvider } from './fake-provider.ts';
 import type { FakeOptions } from './fake-provider.ts';
+import { startFakeServer } from './fake-server.ts';
 import type { FakeServer } from './fake-server.ts';
 
 const servers: FakeServer[] = [];
@@ -194,5 +195,91 @@ describe('NntpMultiPool at a connection cap', () => {
 
     await expect(pool.body('a@b')).rejects.toBeInstanceOf(NntpCapacityError);
     expect(servers[2]?.commands).toEqual([]);
+  });
+});
+
+describe('NntpMultiPool with a bad server', () => {
+  it('treats an auth failure on the primary as fatal and never uses a backup', async () => {
+    // Failing over here would quietly run a whole download on a metered
+    // account because the primary's password was mistyped.
+    pool = new NntpMultiPool({
+      servers: [await provider('primary', { refuseAuth: true }), await provider('backup')],
+    });
+
+    await expect(pool.body('a@b')).rejects.toBeInstanceOf(NntpAuthError);
+    expect(servers[1]?.commands).toEqual([]);
+  });
+
+  it('keeps the primary auth failure sticky', async () => {
+    pool = new NntpMultiPool({
+      servers: [await provider('primary', { refuseAuth: true }), await provider('backup')],
+    });
+
+    await expect(pool.body('a@b')).rejects.toBeInstanceOf(NntpAuthError);
+    await expect(pool.body('b@b')).rejects.toBeInstanceOf(NntpAuthError);
+    expect(servers[1]?.commands).toEqual([]);
+  });
+
+  it('marks a backup down on its first auth failure and stops asking it', async () => {
+    // Deterministic: a password that was wrong a moment ago will be wrong
+    // again, so retrying it once per article is pure noise.
+    pool = new NntpMultiPool({
+      servers: [
+        await provider('primary', { has: false }),
+        await provider('bad', { refuseAuth: true }),
+        await provider('good'),
+      ],
+    });
+
+    await expect(pool.body('a@b')).resolves.toMatchObject({ server: 'good' });
+    const afterFirst = servers[1]?.commands.length ?? 0;
+
+    await expect(pool.body('b@b')).resolves.toMatchObject({ server: 'good' });
+
+    expect(servers[1]?.commands.length).toBe(afterFirst);
+    expect(pool.servers[1]?.state).toBe('down');
+    expect(pool.servers[1]?.downReason).toBeInstanceOf(NntpAuthError);
+  });
+
+  it('leaves a server up when its failures are not consecutive', async () => {
+    // A fake that accepts the connection and then refuses every command with a
+    // 400 forces the pool to discard the connection and the multi-pool to count
+    // a connection-level failure.
+    let refusals = 0;
+    const flaky = await startFakeServer({
+      respond: (command) => {
+        if (command.startsWith('AUTHINFO PASS')) return '281 authentication accepted\r\n';
+        if (command.startsWith('AUTHINFO')) return '381 password required\r\n';
+        if (command.startsWith('BODY')) {
+          refusals += 1;
+          return refusals === 3
+            ? '222 0 <a@b> body follows\r\nhello\r\n.\r\n'
+            : '400 unavailable\r\n';
+        }
+        return '500 unknown command\r\n';
+      },
+    });
+    servers.push(flaky);
+
+    pool = new NntpMultiPool({
+      servers: [
+        {
+          name: 'flaky',
+          endpoint: { host: '127.0.0.1', port: flaky.port, security: 'none' },
+          credentials: { user: 'someone', pass: 'secret' },
+          connections: 1,
+        },
+        await provider('backup'),
+      ],
+    });
+
+    // flaky fails once, backup serves
+    await pool.body('a@b');
+    // twice
+    await pool.body('b@b');
+    // third call succeeds on flaky, resetting the count
+    await pool.body('c@b');
+
+    expect(pool.servers[0]?.state).toBe('ready');
   });
 });

@@ -1,8 +1,16 @@
 import { NntpPool } from './pool.ts';
 import type { NntpPoolOptions } from './pool.ts';
-import { NntpCapacityError, NntpProtocolError } from './errors.ts';
+import { NntpAuthError, NntpCapacityError, NntpProtocolError } from './errors.ts';
 import type { NntpConnectionFailure } from './errors.ts';
 import type { NntpArticleResponse, NntpResponse } from './models.ts';
+
+/**
+ * Consecutive connection-level failures before a server leaves the rotation.
+ *
+ * Three, not one: a timeout on a single article is a bad moment, not a dead
+ * provider. An auth failure bypasses this entirely -- it is deterministic.
+ */
+const DOWN_AFTER = 3;
 
 /**
  * One server in an ordered list.
@@ -55,6 +63,15 @@ interface ServerEntry {
 }
 
 /**
+ * State threaded through one `#run` walk, bundled so it can be passed to the
+ * failure-classification helper instead of living as several loop locals.
+ */
+interface WalkState {
+  requireSpillover: boolean;
+  firstCapacityError: NntpCapacityError | null;
+}
+
+/**
  * An ordered list of servers, tried in turn.
  *
  * The purpose is filling gaps, not aggregating bandwidth: a later server is
@@ -68,6 +85,8 @@ interface ServerEntry {
  */
 export class NntpMultiPool {
   readonly #servers: ServerEntry[];
+  /** Set when the primary cannot authenticate. Sticky, and rethrown to everyone. */
+  #fatal: Error | null = null;
 
   constructor(options: NntpMultiPoolOptions) {
     if (options.servers.length === 0) {
@@ -115,6 +134,67 @@ export class NntpMultiPool {
     }
   }
 
+  #markDown(entry: ServerEntry, reason: Error): void {
+    entry.state = 'down';
+    entry.downReason = reason;
+  }
+
+  /**
+   * Split out of `#run` to stay under the file's max-lines-per-function limit,
+   * not for reuse -- there is exactly one call site.
+   */
+  #handleAuthFailure(entry: ServerEntry, error: NntpAuthError): void {
+    if (entry === this.#servers[0]) {
+      // The server you always use must be right. Failing over would run
+      // the whole job on a backup because of a typo.
+      this.#fatal = error;
+      throw error;
+    }
+    // A backup that cannot log in is treated like one that is unreachable,
+    // so a stale token does not abort a nearly-finished download. One
+    // strike, because the outcome is deterministic.
+    this.#markDown(entry, error);
+  }
+
+  /** Timeout, connection loss, or an unexpected status: transient until it is not. */
+  #recordConnectionFailure(entry: ServerEntry, error: unknown): void {
+    const reason = error instanceof Error ? error : new Error(String(error));
+    entry.consecutiveFailures += 1;
+    if (entry.consecutiveFailures >= DOWN_AFTER) {
+      this.#markDown(entry, reason);
+    }
+  }
+
+  /**
+   * Classify one candidate's failure and update the walk's shared state.
+   * Split out of `#run` to stay under the file's max-lines-per-function limit.
+   *
+   * May throw: an auth failure on the primary is fatal, see
+   * {@link #handleAuthFailure}. Everything else is recorded and swallowed so
+   * the walk can move on to the next candidate.
+   */
+  #handleFailure(entry: ServerEntry, error: unknown, walk: WalkState): void {
+    if (error instanceof NntpProtocolError && error.code === 430) {
+      // A gap, not a fault: this server does not have this article, which
+      // says nothing about its health.
+      return;
+    }
+    if (error instanceof NntpCapacityError) {
+      // Only reaches here when the pool could open no connection at all; a
+      // partial cap is absorbed by the pool shrinking and queueing.
+      walk.requireSpillover = true;
+      if (walk.firstCapacityError === null) {
+        walk.firstCapacityError = error;
+      }
+      return;
+    }
+    if (error instanceof NntpAuthError) {
+      this.#handleAuthFailure(entry, error);
+      return;
+    }
+    this.#recordConnectionFailure(entry, error);
+  }
+
   async body(messageId: string, options?: ArticleFetchOptions): Promise<NntpArticleResponse> {
     const { response, server } = await this.#run(options, (pool) => pool.body(messageId));
     return { ...response, server };
@@ -142,26 +222,30 @@ export class NntpMultiPool {
    * spreading a generic `T` does not typecheck as `T`, and each caller knows its
    * own concrete response type.
    *
-   * `requireSpillover` is sticky: once a server has been skipped because it was
-   * full, everything after it is serving overflow rather than filling a gap, and
-   * overflow is opt-in. `firstCapacityError` keeps only the earliest saturated
-   * server's error, because that account is the actionable one -- a later
-   * server's cap (typically a backup/block account) is downstream noise once the
-   * walk is already in overflow, and must never overwrite it.
+   * `walk.requireSpillover` is sticky: once a server has been skipped because it
+   * was full, everything after it is serving overflow rather than filling a gap,
+   * and overflow is opt-in. `walk.firstCapacityError` keeps only the earliest
+   * saturated server's error, because that account is the actionable one -- a
+   * later server's cap (typically a backup/block account) is downstream noise
+   * once the walk is already in overflow, and must never overwrite it. Failure
+   * classification itself lives in {@link #handleFailure}.
    */
   async #run<T extends NntpResponse>(
     options: ArticleFetchOptions | undefined,
     call: (pool: NntpPool) => Promise<T>,
   ): Promise<{ response: T; server: string }> {
+    if (this.#fatal !== null) {
+      throw this.#fatal;
+    }
+
     const excluded = new Set(options?.exclude ?? []);
-    let requireSpillover = false;
-    let firstCapacityError: NntpCapacityError | null = null;
+    const walk: WalkState = { requireSpillover: false, firstCapacityError: null };
 
     for (const entry of this.#servers) {
       if (entry.state === 'down' || excluded.has(entry.name)) {
         continue;
       }
-      if (requireSpillover && !entry.spillover) {
+      if (walk.requireSpillover && !entry.spillover) {
         continue;
       }
 
@@ -173,26 +257,12 @@ export class NntpMultiPool {
         entry.consecutiveFailures = 0;
         return { response, server: entry.name };
       } catch (error) {
-        if (error instanceof NntpProtocolError && error.code === 430) {
-          // A gap, not a fault: this server does not have this article, which
-          // says nothing about its health.
-          continue;
-        }
-        if (error instanceof NntpCapacityError) {
-          // Only reaches here when the pool could open no connection at all; a
-          // partial cap is absorbed by the pool shrinking and queueing.
-          requireSpillover = true;
-          if (firstCapacityError === null) {
-            firstCapacityError = error;
-          }
-          continue;
-        }
-        throw error;
+        this.#handleFailure(entry, error, walk);
       }
     }
 
-    if (firstCapacityError !== null) {
-      throw firstCapacityError;
+    if (walk.firstCapacityError !== null) {
+      throw walk.firstCapacityError;
     }
 
     throw new NntpProtocolError(430, 'No Such Article on any configured server');
