@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { NntpPool } from '../src/pool.ts';
 import { NntpConnectionError } from '../src/errors.ts';
+import { articleServer } from './fake-provider.ts';
 import { startFakeServer } from './fake-server.ts';
 import type { FakeServer } from './fake-server.ts';
 
@@ -187,5 +188,23 @@ describe('NntpPool', () => {
     const response = await pool.body('a@b');
 
     expect(response.server).toBe('127.0.0.1');
+  });
+
+  it('names the server on head, article and stat too, not only body', async () => {
+    // Each method builds its own response object, so the host is attached four
+    // separate times and can be dropped from three of them with nothing else
+    // noticing. NntpMultiPool overwrites `server` with its configured name, so
+    // no test above this layer can see the difference either -- this is the
+    // only place the field is observably NntpPool's own work.
+    server = await startFakeServer({ respond: articleServer() });
+    pool = new NntpPool({
+      endpoint: { host: '127.0.0.1', port: server.port, security: 'none' },
+      credentials: { user: 'someone', pass: 'secret' },
+      connections: 1,
+    });
+
+    await expect(pool.head('a@b')).resolves.toMatchObject({ code: 221, server: '127.0.0.1' });
+    await expect(pool.article('a@b')).resolves.toMatchObject({ code: 220, server: '127.0.0.1' });
+    await expect(pool.stat('a@b')).resolves.toMatchObject({ code: 223, server: '127.0.0.1' });
   });
 });

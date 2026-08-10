@@ -38,8 +38,20 @@ export function articleServer(options: FakeOptions = {}): (command: string) => s
       logins += 1;
       return logins > allowed ? `502 ${capacityReason}\r\n` : '381 password required\r\n';
     }
-    if (command.startsWith('BODY') || command.startsWith('ARTICLE') || command.startsWith('HEAD')) {
+    // Each retrieval command has its own success code, and NntpClient checks
+    // for the one it asked for -- answering 222 to a HEAD is a protocol error,
+    // not a lenient fake. Keeping them distinct is also what lets a test tell
+    // which command a pool actually issued.
+    if (command.startsWith('BODY')) {
       return has ? `222 0 <a@b> body follows\r\n${payload}\r\n.\r\n` : '430 No Such Article\r\n';
+    }
+    if (command.startsWith('HEAD')) {
+      return has ? '221 0 <a@b> head follows\r\nSubject: fake\r\n.\r\n' : '430 No Such Article\r\n';
+    }
+    if (command.startsWith('ARTICLE')) {
+      return has
+        ? `220 0 <a@b> article follows\r\nSubject: fake\r\n\r\n${payload}\r\n.\r\n`
+        : '430 No Such Article\r\n';
     }
     if (command.startsWith('STAT')) {
       return has ? '223 0 <a@b>\r\n' : '430 No Such Article\r\n';

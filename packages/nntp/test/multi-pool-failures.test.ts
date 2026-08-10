@@ -133,6 +133,32 @@ describe('NntpMultiPool with a bad server', () => {
     expect(pool.servers[0]?.state).toBe('ready');
   });
 
+  it('never counts a 430 toward the failure threshold', async () => {
+    // A 430 is the server saying it does not have this article, which says
+    // nothing about its health. Counting it would take a perfectly healthy
+    // primary down for the life of the pool after three consecutive articles
+    // it happened to lack -- and every remaining article of a long post would
+    // then go to the backup, which for a metered block account is exactly the
+    // bill `spillover: false` exists to prevent, arriving by another door.
+    // Four articles, because three is the threshold and the fourth is what
+    // proves the server is still being asked rather than merely still labelled
+    // ready.
+    pool = new NntpMultiPool({
+      servers: [await provider('primary', { has: false }), await provider('backup')],
+    });
+
+    for (const messageId of ['a@b', 'b@b', 'c@b', 'd@b']) {
+      await expect(pool.body(messageId)).resolves.toMatchObject({ server: 'backup' });
+    }
+
+    expect(pool.servers[0]?.state).toBe('ready');
+    expect(pool.servers[0]?.downReason).toBeNull();
+    // A down server is skipped, so the count of BODY commands the primary saw
+    // is the observable half of "still in the rotation".
+    const asked = servers[0]?.commands.filter((command) => command.startsWith('BODY')) ?? [];
+    expect(asked).toHaveLength(4);
+  });
+
   it('marks a server down after three consecutive connection failures and stops asking it', async () => {
     // No success anywhere in this run: three genuine consecutive
     // connection-level failures is the threshold itself, not a scenario
