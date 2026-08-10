@@ -1,7 +1,12 @@
 import { NntpPool } from './pool.ts';
 import type { NntpPoolOptions } from './pool.ts';
-import { NntpAuthError, NntpCapacityError, NntpProtocolError } from './errors.ts';
-import type { NntpConnectionFailure } from './errors.ts';
+import {
+  NntpAuthError,
+  NntpCapacityError,
+  NntpProtocolError,
+  NntpUnavailableError,
+} from './errors.ts';
+import type { NntpConnectionFailure, NntpServerAttempt } from './errors.ts';
 import type { NntpArticleResponse, NntpResponse } from './models.ts';
 
 /**
@@ -69,6 +74,8 @@ interface ServerEntry {
 interface WalkState {
   requireSpillover: boolean;
   firstCapacityError: NntpCapacityError | null;
+  /** Every server actually tried this walk, in order, with why it failed. */
+  attempts: NntpServerAttempt[];
 }
 
 /**
@@ -157,8 +164,7 @@ export class NntpMultiPool {
   }
 
   /** Timeout, connection loss, or an unexpected status: transient until it is not. */
-  #recordConnectionFailure(entry: ServerEntry, error: unknown): void {
-    const reason = error instanceof Error ? error : new Error(String(error));
+  #recordConnectionFailure(entry: ServerEntry, reason: Error): void {
     entry.consecutiveFailures += 1;
     if (entry.consecutiveFailures >= DOWN_AFTER) {
       this.#markDown(entry, reason);
@@ -169,30 +175,42 @@ export class NntpMultiPool {
    * Classify one candidate's failure and update the walk's shared state.
    * Split out of `#run` to stay under the file's max-lines-per-function limit.
    *
+   * Records the attempt before classifying, and unconditionally -- including
+   * the 430 branch and the fatal primary-auth throw below -- so that
+   * `walk.attempts` reflects every server actually tried this walk, not just
+   * the ones that failed for a reason worth acting on. That is what lets
+   * `#run` tell "every server said 430" from "we could not find out" once the
+   * walk ends, and what stops an error type `#handleFailure` has never seen
+   * before (a bug, not a protocol response) from being silently folded into
+   * that same fallback.
+   *
    * May throw: an auth failure on the primary is fatal, see
    * {@link #handleAuthFailure}. Everything else is recorded and swallowed so
    * the walk can move on to the next candidate.
    */
   #handleFailure(entry: ServerEntry, error: unknown, walk: WalkState): void {
-    if (error instanceof NntpProtocolError && error.code === 430) {
+    const reason = error instanceof Error ? error : new Error(String(error));
+    walk.attempts.push({ server: entry.name, reason });
+
+    if (reason instanceof NntpProtocolError && reason.code === 430) {
       // A gap, not a fault: this server does not have this article, which
       // says nothing about its health.
       return;
     }
-    if (error instanceof NntpCapacityError) {
+    if (reason instanceof NntpCapacityError) {
       // Only reaches here when the pool could open no connection at all; a
       // partial cap is absorbed by the pool shrinking and queueing.
       walk.requireSpillover = true;
       if (walk.firstCapacityError === null) {
-        walk.firstCapacityError = error;
+        walk.firstCapacityError = reason;
       }
       return;
     }
-    if (error instanceof NntpAuthError) {
-      this.#handleAuthFailure(entry, error);
+    if (reason instanceof NntpAuthError) {
+      this.#handleAuthFailure(entry, reason);
       return;
     }
-    this.#recordConnectionFailure(entry, error);
+    this.#recordConnectionFailure(entry, reason);
   }
 
   async body(messageId: string, options?: ArticleFetchOptions): Promise<NntpArticleResponse> {
@@ -239,7 +257,7 @@ export class NntpMultiPool {
     }
 
     const excluded = new Set(options?.exclude ?? []);
-    const walk: WalkState = { requireSpillover: false, firstCapacityError: null };
+    const walk: WalkState = { requireSpillover: false, firstCapacityError: null, attempts: [] };
 
     for (const entry of this.#servers) {
       if (entry.state === 'down' || excluded.has(entry.name)) {
@@ -265,6 +283,18 @@ export class NntpMultiPool {
       throw walk.firstCapacityError;
     }
 
-    throw new NntpProtocolError(430, 'No Such Article on any configured server');
+    // Every candidate tried, and every one of them said 430: the article is
+    // genuinely gone, not merely un-askable. `nzb get` depends on that
+    // distinction to skip one missing file and keep going -- see
+    // NntpUnavailableError's doc comment for why a mixed outcome throws that
+    // instead.
+    const allGone =
+      walk.attempts.length > 0 &&
+      walk.attempts.every(
+        (attempt) => attempt.reason instanceof NntpProtocolError && attempt.reason.code === 430,
+      );
+    throw allGone
+      ? new NntpProtocolError(430, 'No Such Article on any configured server')
+      : new NntpUnavailableError(walk.attempts);
   }
 }

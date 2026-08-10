@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { NntpMultiPool } from '../src/multi-pool.ts';
 import type { NntpServerOptions } from '../src/multi-pool.ts';
-import { NntpCapacityError } from '../src/errors.ts';
+import { NntpCapacityError, NntpProtocolError, NntpUnavailableError } from '../src/errors.ts';
 import { provider as startProvider } from './fake-provider.ts';
 import type { FakeOptions } from './fake-provider.ts';
 import type { FakeServer } from './fake-server.ts';
@@ -194,5 +194,83 @@ describe('NntpMultiPool at a connection cap', () => {
 
     await expect(pool.body('a@b')).rejects.toBeInstanceOf(NntpCapacityError);
     expect(servers[2]?.commands).toEqual([]);
+  });
+});
+
+describe('NntpMultiPool when no server can supply the article', () => {
+  it('throws a 430 when every server said 430', async () => {
+    // nzb get depends on this error type to skip a file and carry on -- it is
+    // how a run survives an expired .nfo. A new error type here would turn a
+    // skip into a crash.
+    pool = new NntpMultiPool({
+      servers: [
+        await provider('primary', { has: false }),
+        await provider('backup', { has: false }),
+      ],
+    });
+
+    const error = await pool.body('a@b').catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(NntpProtocolError);
+    expect((error as NntpProtocolError).code).toBe(430);
+  });
+
+  it('throws NntpUnavailableError naming each server on a mixed failure', async () => {
+    pool = new NntpMultiPool({
+      servers: [
+        await provider('gone', { has: false }),
+        await provider('broken', { refuseAuth: true }),
+      ],
+    });
+
+    const error = await pool.body('a@b').catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(NntpUnavailableError);
+    expect((error as NntpUnavailableError).attempts.map((attempt) => attempt.server)).toEqual([
+      'gone',
+      'broken',
+    ]);
+    expect((error as NntpUnavailableError).message).toContain('broken');
+  });
+
+  it('throws NntpUnavailableError when every candidate was excluded', async () => {
+    pool = new NntpMultiPool({ servers: [await provider('only')] });
+
+    await expect(pool.body('a@b', { exclude: ['only'] })).rejects.toBeInstanceOf(
+      NntpUnavailableError,
+    );
+  });
+
+  it('surfaces a non-NNTP bug through NntpUnavailableError instead of disguising it as a missing article', async () => {
+    // A credential provider that throws a plain bug rather than answering
+    // with a protocol status -- resolveSecret (auth.ts) deliberately lets a
+    // provider's rejection through uncaught, so this is a realistic source of
+    // an error #handleFailure has never classified before. It must still
+    // reach the caller identifiably, not fall out the bottom of #run as a
+    // misleading "no such article".
+    pool = new NntpMultiPool({
+      servers: [
+        await provider(
+          'buggy',
+          {},
+          {
+            credentials: {
+              user: () => {
+                throw new TypeError('boom: not a real credential provider');
+              },
+              pass: 'secret',
+            },
+          },
+        ),
+      ],
+    });
+
+    const error = await pool.body('a@b').catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(NntpUnavailableError);
+    const attempts = (error as NntpUnavailableError).attempts;
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]?.reason).toBeInstanceOf(TypeError);
+    expect((error as NntpUnavailableError).message).toContain('boom');
   });
 });
