@@ -1,6 +1,9 @@
 # Multiple NNTP servers in `@chad3814/nntp`
 
-**Status:** designed 2026-08-10, not implemented. Targets 1.2.0.
+**Status:** implemented and merged 2026-08-11 in PR #1. Shipped in 2.0.0 —
+major rather than minor because the release also renames
+`NntpConnectionFailure.at` to `attempt` and adds a required `writeTo` to
+`NzbFileHandle`, both breaking.
 
 ## Why
 

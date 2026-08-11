@@ -3,7 +3,7 @@
 W3C `File`-like access to the contents of an NZB. Slicing a handle downloads only the
 articles that overlap the requested range.
 
-**Status: 1.0.0.** Depends on `@chad3814/nzb-parser` and
+**Status: 2.0.0.** Depends on `@chad3814/nzb-parser` and
 `@chad3814/yenc`, and on nothing else.
 
 ## Why this shape

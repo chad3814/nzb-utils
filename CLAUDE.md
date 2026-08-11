@@ -242,7 +242,7 @@ connections`, shrinks its limit, and completes all 200 requests in ~12 s.
   exact; do not write a test that asserts it equals the cap.
 - **`NntpConnectionFailure` counts attempts, it does not time them.**
   `scripts/smoke.ts` printed the field through `new Date()` and reported every
-  refusal as 1970, because it was called `at`. Renamed to `attempt` in 1.2.0.
+  refusal as 1970, because it was called `at`. Renamed to `attempt` in 2.0.0.
   If a real timestamp is ever wanted, add one; do not overload this.
 
 ## Test fixtures

@@ -3,7 +3,7 @@
 Strictly-typed NNTP client (RFC 3977, `AUTHINFO` from RFC 4643) with TLS,
 connection pooling, and dot-unstuffing.
 
-**Status: 1.0.0.** One runtime dependency,
+**Status: 2.0.0.** One runtime dependency,
 [`@chad3814/secret-provider`](https://github.com/chad3814/secret-provider).
 
 ```ts

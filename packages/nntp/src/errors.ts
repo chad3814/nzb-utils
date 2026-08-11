@@ -107,7 +107,7 @@ export interface NntpConnectionFailure {
   /**
    * 0-based index of this attempt among the recorded failures.
    *
-   * An ordinal, not a timestamp. It was called `at` until 1.2.0, which read
+   * An ordinal, not a timestamp. It was called `at` until 2.0.0, which read
    * enough like a time that `scripts/smoke.ts` printed it through `new Date()`
    * and reported every refusal as 1970.
    */
