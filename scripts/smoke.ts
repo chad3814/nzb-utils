@@ -171,12 +171,17 @@ function primaryServer(): NntpServerOptions {
   };
 }
 
+// `name` is dropped rather than spread through: it belongs to
+// NntpServerOptions, and NntpPool has no such option. Passing it is inert, but
+// it reads as though a lone pool were named, which it is not.
+const { name: _poolName, ...primaryPool } = primaryServer();
+
 const pool = new NntpPool({
   // Providers rather than literals, which is what the credential path is built
   // for: nothing is read until a connection is actually opened. No memoize()
   // here on purpose — the pool normalises and memoizes at its own boundary, and
   // this harness exists partly to check that it does.
-  ...primaryServer(),
+  ...primaryPool,
   timeoutMs: 30_000,
 });
 
