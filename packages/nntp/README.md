@@ -241,14 +241,25 @@ not put the secret in the error it throws.
 
 ## Layout
 
-| Module               | Role                                                   |
-| -------------------- | ------------------------------------------------------ |
-| `response-buffer.ts` | Wire framing: lines, dot-terminated blocks, unstuffing |
-| `auth.ts`            | Resolving a credential and spending it on `AUTHINFO`   |
-| `client.ts`          | One connection: commands, responses, timeouts          |
-| `pool.ts`            | Lazy pool of authenticated connections                 |
-| `socket.ts`          | TCP / implicit TLS / `STARTTLS` upgrade                |
-| `wire.ts`            | Message-ID wrapping and redaction                      |
+| Module                  | Role                                                    |
+| ----------------------- | ------------------------------------------------------- |
+| `response-buffer.ts`    | Wire framing: lines, dot-terminated blocks, unstuffing  |
+| `auth.ts`               | Resolving a credential and spending it on `AUTHINFO`    |
+| `client.ts`             | One connection: commands, responses, timeouts           |
+| `pool.ts`               | Lazy pool of authenticated connections                  |
+| `multi-pool.ts`         | An ordered list of pools, walked until one answers      |
+| `multi-pool-failure.ts` | Classifying one candidate's failure; the down threshold |
+| `multi-pool-models.ts`  | Per-server options, status, and the `statAll` verdict   |
+| `socket.ts`             | TCP / implicit TLS / `STARTTLS` upgrade                 |
+| `wire.ts`               | Message-ID wrapping and redaction                       |
+
+`NntpMultiPool` composes one `NntpPool` per server rather than teaching one pool
+about several endpoints, because the learned connection cap, the credential and the
+up/down state are all per-server. It manages no sockets of its own. Failure
+classification is split into `multi-pool-failure.ts` so that deciding what a failure
+means is a pure function of an entry, an error and the current walk — the class is
+left as the only thing holding the authority to fail every walk rather than just
+this one.
 
 `ResponseBuffer` and `auth.ts` are both socket-free on purpose. Framing is where
 the subtle bugs live, and authentication is where the sensitive ones are, so each
@@ -259,7 +270,7 @@ an error.
 
 ## Testing
 
-88 unit tests. The client and pool run against a real TCP server (`test/fake-server.ts`)
+131 unit tests. The client and pool run against a real TCP server (`test/fake-server.ts`)
 rather than a mocked socket — the bugs worth catching are framing bugs, and a
 mock that hands over whole responses cannot produce a split terminator. The
 fake server can deliver a reply as several writes specifically to force awkward
