@@ -66,6 +66,21 @@ export interface NntpCredentials {
 export interface NntpResponse {
   readonly code: number;
   readonly message: string;
+  /**
+   * Which server answered, for pools that have more than one to choose from.
+   *
+   * Set by `NntpPool` too, to its endpoint host, so a single pool and an
+   * `NntpMultiPool` report identically and a caller retrying elsewhere does
+   * not need to know which it holds.
+   *
+   * Optional because `NntpClient` is public and never sets it: a bare client
+   * is one connection to one place, so it has no name to report and nothing
+   * to choose between. Do not tidy this to required — that would force every
+   * client response to invent a value, and would make an absent `server` (the
+   * signal `@chad3814/nzb`'s CRC retry reads as "there is nowhere else to
+   * try") unrepresentable.
+   */
+  readonly server?: string;
 }
 
 /** A multi-line article response. */

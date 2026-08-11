@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { NntpPool } from '../src/pool.ts';
 import { NntpConnectionError } from '../src/errors.ts';
+import { articleServer } from './fake-provider.ts';
 import { startFakeServer } from './fake-server.ts';
 import type { FakeServer } from './fake-server.ts';
 
@@ -42,6 +43,28 @@ async function open(connections: number, pass = 'right'): Promise<NntpPool> {
     connections,
   });
   return pool;
+}
+
+/** Accepts `allowed` logins, then answers 502 like a provider at its cap. */
+function cappedServer(allowed: number): (command: string) => string | null {
+  let logins = 0;
+
+  return (command: string): string | null => {
+    if (command.startsWith('AUTHINFO USER')) {
+      logins += 1;
+      return logins > allowed ? '502 Too many connections.\r\n' : '381 password required\r\n';
+    }
+    if (command.startsWith('AUTHINFO PASS')) {
+      return '281 authentication accepted\r\n';
+    }
+    if (command.startsWith('BODY')) {
+      return '222 0 <a@b> body follows\r\nhello\r\n.\r\n';
+    }
+    if (command === 'QUIT') {
+      return '205 closing\r\n';
+    }
+    return '500 unknown command\r\n';
+  };
 }
 
 describe('NntpPool', () => {
@@ -152,5 +175,36 @@ describe('NntpPool', () => {
     // The replacement server is on a different port, so the retry cannot
     // succeed -- what matters is that it fails cleanly instead of hanging.
     await expect(client.body('b@example.com')).rejects.toThrow(Error);
+  });
+
+  it('names the server that answered, so a caller can tell pools apart', async () => {
+    server = await startFakeServer({ respond: cappedServer(4) });
+    pool = new NntpPool({
+      endpoint: { host: '127.0.0.1', port: server.port, security: 'none' },
+      credentials: { user: 'someone', pass: 'secret' },
+      connections: 1,
+    });
+
+    const response = await pool.body('a@b');
+
+    expect(response.server).toBe('127.0.0.1');
+  });
+
+  it('names the server on head, article and stat too, not only body', async () => {
+    // Each method builds its own response object, so the host is attached four
+    // separate times and can be dropped from three of them with nothing else
+    // noticing. NntpMultiPool overwrites `server` with its configured name, so
+    // no test above this layer can see the difference either -- this is the
+    // only place the field is observably NntpPool's own work.
+    server = await startFakeServer({ respond: articleServer() });
+    pool = new NntpPool({
+      endpoint: { host: '127.0.0.1', port: server.port, security: 'none' },
+      credentials: { user: 'someone', pass: 'secret' },
+      connections: 1,
+    });
+
+    await expect(pool.head('a@b')).resolves.toMatchObject({ code: 221, server: '127.0.0.1' });
+    await expect(pool.article('a@b')).resolves.toMatchObject({ code: 220, server: '127.0.0.1' });
+    await expect(pool.stat('a@b')).resolves.toMatchObject({ code: 223, server: '127.0.0.1' });
   });
 });

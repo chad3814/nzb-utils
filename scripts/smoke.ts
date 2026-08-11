@@ -21,6 +21,12 @@
  * connection limit. Leave the last one off unless that is what you are
  * testing -- it opens as many connections as NNTP_CONNECTIONS asks for.
  *
+ * Optional second provider, for proving the fill-the-gap path against a real
+ * expired article: NNTP2_HOST, NNTP2_PORT, NNTP2_USER, NNTP2_PASS, and
+ * optionally NNTP2_SECURITY (implicit by default) and NNTP2_CONNECTIONS (4).
+ * Present only when NNTP2_HOST is set -- most runs have one account, and a
+ * second is a real purchase.
+ *
  * Credentials must arrive this way — injected into the environment by `op run`
  * — so they never enter a file, a transcript, or a shell history. As a backstop
  * every line of output goes through `scrub()`: if a credential ever did reach
@@ -28,8 +34,8 @@
  */
 import { readFile } from 'node:fs/promises';
 
-import { NntpPool } from '@chad3814/nntp';
-import type { NntpEndpoint } from '@chad3814/nntp';
+import { NntpMultiPool, NntpPool } from '@chad3814/nntp';
+import type { NntpEndpoint, NntpServerOptions } from '@chad3814/nntp';
 import { parseNzb } from '@chad3814/nzb-parser';
 import { openNzbFile } from '@chad3814/nzb';
 import { fromEnv } from '@chad3814/secret-provider';
@@ -46,10 +52,11 @@ import {
   retention,
   tailSlice,
 } from './checks.ts';
+import { capacity, fillsTheGap } from './server-checks.ts';
 
 const PREVIEW = 4 * 1024 * 1024;
 
-const SECRETS = ['NNTP_PASS', 'NNTP_USER']
+const SECRETS = ['NNTP_PASS', 'NNTP_USER', 'NNTP2_PASS', 'NNTP2_USER']
   .map((name) => process.env[name])
   .filter((value): value is string => value !== undefined && value.length > 3);
 
@@ -69,12 +76,46 @@ function required(name: string): string {
   return value;
 }
 
-function endpoint(): NntpEndpoint {
-  const security = process.env['NNTP_SECURITY'] ?? 'implicit';
-  if (security !== 'implicit' && security !== 'starttls' && security !== 'none') {
-    throw new Error(`NNTP_SECURITY must be implicit, starttls or none; got ${security}`);
+/**
+ * Shared by `endpoint()` and `secondServer()`, so the primary and the second
+ * provider validate `*_SECURITY` the same way instead of drifting apart as
+ * one gets edited and the other does not.
+ */
+function security(envVar: string): 'implicit' | 'starttls' | 'none' {
+  const value = process.env[envVar] ?? 'implicit';
+  if (value !== 'implicit' && value !== 'starttls' && value !== 'none') {
+    throw new Error(`${envVar} must be implicit, starttls or none; got ${value}`);
   }
-  return { host: required('NNTP_HOST'), port: Number(required('NNTP_PORT')), security };
+  return value;
+}
+
+function endpoint(): NntpEndpoint {
+  return {
+    host: required('NNTP_HOST'),
+    port: Number(required('NNTP_PORT')),
+    security: security('NNTP_SECURITY'),
+  };
+}
+
+/**
+ * The optional second provider.
+ *
+ * Present only when NNTP2_HOST is set. Opt-in in the same spirit as
+ * NNTP_PROBE_CAP: most runs have one account, and a second one is a real
+ * purchase.
+ */
+function secondServer(): NntpServerOptions | null {
+  const host = process.env['NNTP2_HOST'];
+  if (host === undefined || host === '') {
+    return null;
+  }
+
+  return {
+    name: host,
+    endpoint: { host, port: Number(required('NNTP2_PORT')), security: security('NNTP2_SECURITY') },
+    credentials: { user: fromEnv('NNTP2_USER'), pass: fromEnv('NNTP2_PASS') },
+    connections: Number(process.env['NNTP2_CONNECTIONS'] ?? '4'),
+  };
 }
 
 function describe(error: unknown): string {
@@ -109,56 +150,38 @@ say(
 );
 say(`groups: ${nzb.groups.join(', ')}`);
 
-/**
- * Ask for far more connections at once than the account allows.
- *
- * Every request is started in one tick, so all of them reach the pool before
- * any can complete and free a connection — which is what forces the opens.
- * Found this way: 200 concurrent requests against a 100-connection account
- * used to hang outright, because a refusal parked its caller without checking
- * whether a connection had already gone idle, and nothing was left running to
- * wake it. The property worth asserting is not "some fail" but "all settle".
- */
-async function capacity(
-  document: ReturnType<typeof parseNzb>,
-  connections: NntpPool,
-  want: number,
-): Promise<string> {
-  const id = document.files.flatMap((file) => file.segments)[0]?.messageId;
-  if (id === undefined) {
-    throw new Error('the NZB lists no segments');
-  }
-
-  const before = connections.failures.length;
-  const started = Date.now();
-  const results = await Promise.allSettled(
-    Array.from({ length: want }, () => connections.stat(id)),
-  );
-  const refused = connections.failures.length - before;
-  const rejected = results.filter((result) => result.status === 'rejected').length;
-
-  if (rejected > 0) {
-    throw new Error(`${String(rejected)} of ${String(want)} requests failed outright`);
-  }
-
-  return (
-    `${String(want)} concurrent requests all settled in ${String(Date.now() - started)} ms; ` +
-    `${String(refused)} refused, limit shrank ${String(want)} -> ${String(connections.limit)}`
-  );
-}
-
 function connectionCount(): number {
   return Number(process.env['NNTP_CONNECTIONS'] ?? '4');
 }
+
+/**
+ * The primary, reshaped as a server entry.
+ *
+ * Reused both for the top-level `pool` below and for the `NntpMultiPool` the
+ * second-provider check builds, so the primary's credentials, endpoint and
+ * connection count are defined in exactly one place.
+ */
+function primaryServer(): NntpServerOptions {
+  const host = endpoint();
+  return {
+    name: host.host,
+    endpoint: host,
+    credentials: { user: fromEnv('NNTP_USER'), pass: fromEnv('NNTP_PASS') },
+    connections: connectionCount(),
+  };
+}
+
+// `name` is dropped rather than spread through: it belongs to
+// NntpServerOptions, and NntpPool has no such option. Passing it is inert, but
+// it reads as though a lone pool were named, which it is not.
+const { name: _poolName, ...primaryPool } = primaryServer();
 
 const pool = new NntpPool({
   // Providers rather than literals, which is what the credential path is built
   // for: nothing is read until a connection is actually opened. No memoize()
   // here on purpose — the pool normalises and memoizes at its own boundary, and
   // this harness exists partly to check that it does.
-  credentials: { user: fromEnv('NNTP_USER'), pass: fromEnv('NNTP_PASS') },
-  endpoint: endpoint(),
-  connections: connectionCount(),
+  ...primaryPool,
   timeoutMs: 30_000,
 });
 
@@ -203,6 +226,19 @@ try {
     await check('saturating the account settles every request', () =>
       capacity(nzb, pool, connectionCount()),
     );
+  }
+
+  const second = secondServer();
+  if (second !== null) {
+    say('\n-- second provider --');
+    const multi = new NntpMultiPool({ servers: [primaryServer(), second] });
+    try {
+      await check('an article the primary lost is fetched from the second', () =>
+        fillsTheGap(nzb, multi),
+      );
+    } finally {
+      multi.destroy();
+    }
   }
 } finally {
   if (pool.failures.length > 0) {

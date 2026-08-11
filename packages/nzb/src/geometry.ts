@@ -1,8 +1,8 @@
-import { decodeArticle } from '@chad3814/yenc';
 import type { YencArticle } from '@chad3814/yenc';
 import type { NzbFile } from '@chad3814/nzb-parser';
 
 import { NzbGeometryError } from './errors.ts';
+import { fetchArticle } from './fetch.ts';
 import type { ArticleSource, SegmentGeometry } from './models.ts';
 
 /**
@@ -55,8 +55,7 @@ export async function probeGeometry(
     throw new NzbGeometryError('cannot open a file with no segments');
   }
 
-  const { body } = await source.body(first.messageId);
-  const article = decodeArticle(body, { verify: options.verify ?? true });
+  const article = await fetchArticle(source, first.messageId, { verify: options.verify ?? true });
 
   return {
     name: article.header.name,

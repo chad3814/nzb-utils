@@ -2,6 +2,7 @@ import { memoizeCredentials } from './auth.ts';
 import type { CredentialProviders } from './auth.ts';
 import { NntpClient } from './client.ts';
 import { NntpCapacityError, NntpConnectionError } from './errors.ts';
+import type { NntpConnectionFailure } from './errors.ts';
 import type { NntpArticleResponse, NntpCredentials, NntpEndpoint, NntpResponse } from './models.ts';
 
 export interface NntpPoolOptions {
@@ -36,17 +37,10 @@ export interface NntpPoolOptions {
   readonly timeoutMs?: number;
 }
 
-/** Why one connection attempt failed, kept per attempt rather than merged. */
-export interface NntpConnectionFailure {
-  /**
-   * 0-based index of this attempt among the recorded failures.
-   *
-   * An ordinal, not a timestamp. It was called `at` until 1.2.0, which read
-   * enough like a time that `scripts/smoke.ts` printed it through `new Date()`
-   * and reported every refusal as 1970.
-   */
-  readonly attempt: number;
-  readonly reason: string;
+/** A caller parked until a connection frees up. */
+interface Waiter {
+  readonly resolve: (client: NntpClient) => void;
+  readonly reject: (error: unknown) => void;
 }
 
 /**
@@ -63,12 +57,6 @@ export interface NntpConnectionFailure {
  *    a DNS failure are indistinguishable. Here the originating error
  *    propagates and {@link failures} keeps the history.
  */
-/** A caller parked until a connection frees up. */
-interface Waiter {
-  readonly resolve: (client: NntpClient) => void;
-  readonly reject: (error: unknown) => void;
-}
-
 export class NntpPool {
   readonly #endpoint: NntpEndpoint;
   #limit: number;
@@ -108,20 +96,24 @@ export class NntpPool {
     return this.#failures;
   }
 
-  body(messageId: string): Promise<NntpArticleResponse> {
-    return this.#withConnection((client) => client.body(messageId));
+  async body(messageId: string): Promise<NntpArticleResponse> {
+    const response = await this.#withConnection((client) => client.body(messageId));
+    return { ...response, server: this.#endpoint.host };
   }
 
-  head(messageId: string): Promise<NntpArticleResponse> {
-    return this.#withConnection((client) => client.head(messageId));
+  async head(messageId: string): Promise<NntpArticleResponse> {
+    const response = await this.#withConnection((client) => client.head(messageId));
+    return { ...response, server: this.#endpoint.host };
   }
 
-  article(messageId: string): Promise<NntpArticleResponse> {
-    return this.#withConnection((client) => client.article(messageId));
+  async article(messageId: string): Promise<NntpArticleResponse> {
+    const response = await this.#withConnection((client) => client.article(messageId));
+    return { ...response, server: this.#endpoint.host };
   }
 
-  stat(messageId: string): Promise<NntpResponse> {
-    return this.#withConnection((client) => client.stat(messageId));
+  async stat(messageId: string): Promise<NntpResponse> {
+    const response = await this.#withConnection((client) => client.stat(messageId));
+    return { ...response, server: this.#endpoint.host };
   }
 
   destroy(): void {

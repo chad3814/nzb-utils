@@ -101,3 +101,46 @@ export class NntpConnectionError extends Error {
     this.name = 'NntpConnectionError';
   }
 }
+
+/** Why one connection attempt failed, kept per attempt rather than merged. */
+export interface NntpConnectionFailure {
+  /**
+   * 0-based index of this attempt among the recorded failures.
+   *
+   * An ordinal, not a timestamp. It was called `at` until 1.2.0, which read
+   * enough like a time that `scripts/smoke.ts` printed it through `new Date()`
+   * and reported every refusal as 1970.
+   */
+  readonly attempt: number;
+  readonly reason: string;
+}
+
+/** One server's answer when a request had to walk the whole list. */
+export interface NntpServerAttempt {
+  readonly server: string;
+  readonly reason: Error;
+}
+
+/**
+ * No configured server could supply the article, and they did not all agree
+ * why.
+ *
+ * When every server answers 430 the article is simply gone, and a 430
+ * `NntpProtocolError` is thrown instead — callers already treat that as "skip
+ * this file and report it", and widening the type would turn a skip into a
+ * crash. This error is for the mixed case, where at least one server could not
+ * be asked, and it keeps every server's reason so the report can name them.
+ */
+export class NntpUnavailableError extends Error {
+  readonly attempts: readonly NntpServerAttempt[];
+
+  constructor(attempts: readonly NntpServerAttempt[]) {
+    const detail =
+      attempts.length === 0
+        ? 'no server was available to try'
+        : attempts.map((attempt) => `${attempt.server}: ${attempt.reason.message}`).join('; ');
+    super(`no configured server could supply the article (${detail})`);
+    this.name = 'NntpUnavailableError';
+    this.attempts = attempts;
+  }
+}

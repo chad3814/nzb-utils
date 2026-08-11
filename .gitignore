@@ -145,3 +145,6 @@ vite.config.ts.timestamp-*
 # Live smoke-test config: an op:// env template, never real credentials.
 # Kept out of the repo because the provider and account are the runner's own.
 smoke*.env
+
+# Subagent-driven-development scratch: ledger, briefs, review packages.
+.superpowers/
