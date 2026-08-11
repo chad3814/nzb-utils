@@ -256,10 +256,11 @@ not put the secret in the error it throws.
 `NntpMultiPool` composes one `NntpPool` per server rather than teaching one pool
 about several endpoints, because the learned connection cap, the credential and the
 up/down state are all per-server. It manages no sockets of its own. Failure
-classification is split into `multi-pool-failure.ts` so that deciding what a failure
-means is a pure function of an entry, an error and the current walk — the class is
-left as the only thing holding the authority to fail every walk rather than just
-this one.
+classification is split into `multi-pool-failure.ts` so that `rule(entry, error, walk,
+isPrimary)` decides what a failure means from nothing but those four arguments, never
+`this` — it mutates the entry and walk it is handed, but never touches a pool or a
+credential — and returns a ruling for the class to apply, which is what keeps the
+authority to fail an entire walk in one place.
 
 `ResponseBuffer` and `auth.ts` are both socket-free on purpose. Framing is where
 the subtle bugs live, and authentication is where the sensitive ones are, so each
