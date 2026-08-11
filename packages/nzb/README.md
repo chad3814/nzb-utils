@@ -29,13 +29,32 @@ artifact to hand to something else.
 
 ```ts
 interface ArticleSource {
-  body(messageId: string): Promise<ArticleBody>;
+  body(messageId: string, options?: ArticleFetchOptions): Promise<ArticleBody>;
+}
+
+interface ArticleFetchOptions {
+  /** Names of sources already tried, from `ArticleBody.server`. */
+  readonly exclude?: readonly string[];
+}
+
+interface ArticleBody {
+  /** Raw article bytes, CRLF preserved and already dot-unstuffed. */
+  readonly body: Buffer;
+  /** Which server supplied this, for sources that have more than one. */
+  readonly server?: string;
 }
 ```
 
 An authenticated `@chad3814/nntp` client satisfies it. So does a pool, a cache, or a
 test fixture. Authentication belongs to the transport and stays there — this package
 has no parameter that accepts a username or password.
+
+`options` and `server` are the whole of what multi-server support costs this
+package: a name attached to an answer, and a list of names not to ask again. Both
+are optional, so a single-server source that ignores them is still an
+`ArticleSource`. Nothing here knows what a server _is_ — the type is declared here
+rather than imported from `@chad3814/nntp` precisely so a cache or a fixture can
+satisfy the seam without depending on the transport.
 
 ## Geometry: predict, then verify
 
@@ -99,6 +118,56 @@ posts with trailers known to be wrong. Note that `@thaunknown/yencode`'s `fromPo
 does **not** check it — nothing in that library compares CRCs, so a "verified"
 download verified nothing. PAR2-level verification will come from `@chad3814/par2`.
 
+### A failed CRC is retried on another server
+
+A `pcrc32` mismatch means the bytes arrived wrong, and the only fix is a different
+provider. That retry lives here rather than in the transport, because yEnc is
+decoded above the transport: a pool hands over a well-formed `222` response and
+cannot see that its payload is corrupt.
+
+So every fetch goes through `fetchArticle`, which decodes, and on a
+`YencChecksumError` — and only that error — asks again with the serving server
+added to `exclude`. A `YencDecodeError` is not retried: a malformed article is
+malformed everywhere, and asking again just spends someone's bytes.
+
+The loop needs no attempt counter. Each pass adds a name to the exclusion list, so
+a multi-server source runs out of candidates and says so; a source that reports no
+server at all has nothing to exclude and fails on the first try; a source that
+ignores `exclude` is stopped the moment it repeats a name. That termination is a
+contract on `ArticleSource` — it holds because names come from a fixed, finite set.
+
+When no server has an intact copy, the error is the `YencChecksumError`, with the
+source's own "nothing left to try" error attached as `cause`. Reporting the latter
+alone would say every server was available and none answered, which is the exact
+opposite of what happened.
+
+### `fetchArticle` is exported directly
+
+`openNzbFile` calls `fetchArticle` for every segment; it is also a root export
+on its own, for a caller building directly on the `ArticleSource` seam who
+wants one decoded article and not a whole `File`-like handle:
+
+```ts
+import { fetchArticle } from '@chad3814/nzb';
+
+const article = await fetchArticle(source, messageId, { verify: true });
+```
+
+It fetches the article by Message-ID, decodes it, and runs the same retry
+described above, not a smaller version of it: a `YencChecksumError` sends it
+back to `source` with the serving server added to `exclude`; a
+`YencDecodeError` does not, because a malformed article is malformed
+everywhere and retrying it only spends someone's bytes. A source whose
+`ArticleBody` reports no `server` has nothing to exclude and gets exactly one
+attempt.
+
+This was not part of the original design — the plan was for `openNzbFile` to
+be the only way in. It stayed exported because a caller working against
+`ArticleSource` directly has a real use for one decoded article and no use
+for a handle, and an unexported version of the same function would still be
+the retry logic a caller needs, just unreachable. An undocumented export
+would have been worse than either choice, so it is documented here.
+
 ## Layout
 
 | Module        | Role                                                      |
@@ -106,6 +175,7 @@ download verified nothing. PAR2-level verification will come from `@chad3814/par
 | `range.ts`    | Slice and range arithmetic. Pure, no document, no I/O     |
 | `geometry.ts` | Probing segment 1, and verifying every article after it   |
 | `handle.ts`   | The `File`-like handle: windows, fetching, streaming      |
+| `fetch.ts`    | One article, decoded, retried elsewhere on a CRC failure  |
 | `write.ts`    | Offset-addressed handover: unordered, serialised, bounded |
 | `mutex.ts`    | Runs queued tasks one at a time                           |
 | `mime.ts`     | Filename to MIME type                                     |
@@ -239,7 +309,7 @@ handle, and a view into it would be shared state.
 
 ## Testing
 
-109 unit tests over synthetic posts built by `test/post.ts`, which assembles real
+142 unit tests over synthetic posts built by `test/post.ts`, which assembles real
 yEnc articles — CRCs from `node:zlib`, so a fixture cannot agree with a broken
 decoder by construction — and wraps them in a recording `ArticleSource` that makes
 "which articles did that cost?" a plain assertion.
