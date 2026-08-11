@@ -35,7 +35,7 @@ export class NntpMultiPool {
     const seen = new Set<string>();
     // Destructured, not retained: `options.servers` entries carry `credentials`,
     // and keeping one on a field would put a credential -- or a provider closure
-    // -- on an instance, which hard rule 3 forbids and client.test.ts scans for.
+    // -- on an instance, which hard rule 3 forbids and credential-retention.test.ts scans for.
     // The credential ends up only inside its own pool's memoized providers.
     this.#servers = options.servers.map((server): ServerEntry => {
       const name = server.name ?? server.endpoint.host;

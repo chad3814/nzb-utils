@@ -67,8 +67,8 @@ describe('NntpMultiPool construction', () => {
     // and that version of the bug passed this test right along with the real
     // code. Only a *public* field made it fail. Every field on this class is
     // `#private`, so the realistic version of this mistake is exactly the one
-    // this test cannot see; the source-level scan in client.test.ts is what
-    // actually enforces the rule.
+    // this test cannot see; the source-level scan in credential-retention.test.ts
+    // is what actually enforces the rule.
     pool = new NntpMultiPool({ servers: [await provider('primary')] });
 
     expect(inspect(pool, { showHidden: true, depth: 6 })).not.toContain('secret');

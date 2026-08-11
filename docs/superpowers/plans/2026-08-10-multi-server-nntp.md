@@ -14,7 +14,7 @@
 
 - **Never commit without Chad's explicit approval.** CLAUDE.md hard rule 4. Every "Commit" step below means _stage the change and ask_, not `git commit` unprompted.
 - **`any` is banned** (lint-enforced). **Non-null assertions are banned** (lint-enforced).
-- **Credentials live only in `@chad3814/nntp`** (hard rule 3), and never on an instance field. `packages/nntp/test/client.test.ts` enforces this by scanning every `src/*.ts` for `this.x = credentials` and `this.x = resolveSecret(...)`. New files are covered automatically because the test reads the whole directory.
+- **Credentials live only in `@chad3814/nntp`** (hard rule 3), and never on an instance field. `packages/nntp/test/credential-retention.test.ts` enforces this by scanning every `src/*.ts` for `this.x = credentials`, `this.x = resolveSecret(...)`, and any retention of the constructor `options` object or a piece of it. New files are covered automatically because the test reads the whole directory. (The scan lived in `client.test.ts` while this plan was written; it moved out when the allowlist form pushed that file toward the 300-line cap.)
 - **`@chad3814/nzb` must not depend on `@chad3814/nntp`.** It depends on `nzb-parser` and `yenc` only. Shared-looking types are declared separately in each package on purpose; the seam is structural.
 - **Prefer async APIs** over their `*Sync` twins (hard rule 5).
 - **A change is not done until `npm run check` passes** — typecheck, `oxlint --deny-warnings`, `prettier --check`, and the full vitest run. Run it from `/Users/cwalker/Projects/nzb-utils/worktrees/main`; the shell cwd has repeatedly reset to the bare-repo root, which makes builds silently no-op.
@@ -355,8 +355,8 @@ export class NntpMultiPool {
     const seen = new Set<string>();
     // Destructured, not retained: `options.servers` entries carry `credentials`,
     // and keeping one on a field would put a credential -- or a provider closure
-    // -- on an instance, which hard rule 3 forbids and client.test.ts scans for.
-    // The credential ends up only inside its own pool's memoized providers.
+    // -- on an instance, which hard rule 3 forbids and credential-retention.test.ts
+    // scans for. The credential ends up only inside its own pool's memoized providers.
     this.#servers = options.servers.map((server): ServerEntry => {
       const name = server.name ?? server.endpoint.host;
       if (seen.has(name)) {
@@ -1208,9 +1208,9 @@ Append to `packages/nntp/test/multi-pool.test.ts`:
 
 ```ts
 it('keeps no credential on the multi-pool itself', async () => {
-  // Hard rule 3. The source-level scan in client.test.ts covers assignments;
-  // this covers the shape that would defeat it -- retaining the whole options
-  // object, credentials and all.
+  // Hard rule 3. The source-level scan in credential-retention.test.ts covers
+  // assignments; this covers the shape that would defeat it -- retaining the
+  // whole options object, credentials and all.
   pool = new NntpMultiPool({ servers: [await provider('primary')] });
 
   expect(inspect(pool, { showHidden: true, depth: 6 })).not.toContain('secret');
@@ -1705,16 +1705,16 @@ git add scripts/smoke.ts
 
 After Task 9, before Task 10, run these against `npx vitest run packages/nntp packages/nzb`. Every one should turn the suite red; a survivor means the test that should catch it is missing or too weak. This has found a real gap in roughly a third of the increments in this repo.
 
-| Mutation                                                       | Should be caught by                                                    |
-| -------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Delete the `requireSpillover && !entry.spillover` skip         | "does not spill onto a server that has not opted in"                   |
-| Change `#run`'s loop to `Promise.race` over all candidates     | "never contacts the backup when the primary has the article"           |
-| Ignore `options.exclude`                                       | "skips a server named in exclude"                                      |
-| Reset `consecutiveFailures` in the catch instead of on success | "marks a server down only after three consecutive connection failures" |
-| Return `NntpUnavailableError` for the unanimous-430 case       | "throws a 430 when every server said 430"                              |
-| Treat a primary auth failure as mark-down                      | "treats an auth failure on the primary as fatal"                       |
-| Drop the `tried.includes(server)` guard in `fetchArticle`      | "does not loop when a source ignores exclude"                          |
-| Retry on `YencDecodeError` as well as `YencChecksumError`      | "does not retry a malformed article, which is malformed everywhere"    |
+| Mutation                                                       | Should be caught by                                                                   |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Delete the `requireSpillover && !entry.spillover` skip         | "does not spill onto a server that has not opted in"                                  |
+| Change `#run`'s loop to `Promise.race` over all candidates     | "never contacts the backup when the primary has the article"                          |
+| Ignore `options.exclude`                                       | "skips a server named in exclude"                                                     |
+| Reset `consecutiveFailures` in the catch instead of on success | "marks a server down after three consecutive connection failures and stops asking it" |
+| Return `NntpUnavailableError` for the unanimous-430 case       | "throws a 430 when every server said 430"                                             |
+| Treat a primary auth failure as mark-down                      | "treats an auth failure on the primary as fatal"                                      |
+| Drop the `tried.includes(server)` guard in `fetchArticle`      | "does not loop when a source ignores exclude"                                         |
+| Retry on `YencDecodeError` as well as `YencChecksumError`      | "does not retry a malformed article, which is malformed everywhere"                   |
 
 ## Done when
 
