@@ -17,7 +17,7 @@
 - **Credentials live only in `@chad3814/nntp`** (hard rule 3), and never on an instance field. `packages/nntp/test/credential-retention.test.ts` enforces this by scanning every `src/*.ts` for `this.x = credentials`, `this.x = resolveSecret(...)`, and any retention of the constructor `options` object or a piece of it. New files are covered automatically because the test reads the whole directory. (The scan lived in `client.test.ts` while this plan was written; it moved out when the allowlist form pushed that file toward the 300-line cap.)
 - **`@chad3814/nzb` must not depend on `@chad3814/nntp`.** It depends on `nzb-parser` and `yenc` only. Shared-looking types are declared separately in each package on purpose; the seam is structural.
 - **Prefer async APIs** over their `*Sync` twins (hard rule 5).
-- **A change is not done until `npm run check` passes** — typecheck, `oxlint --deny-warnings`, `prettier --check`, and the full vitest run. Run it from `/Users/cwalker/Projects/nzb-utils/worktrees/main`; the shell cwd has repeatedly reset to the bare-repo root, which makes builds silently no-op.
+- **A change is not done until `npm run check` passes** — typecheck, `oxlint --deny-warnings`, `prettier --check`, and the full vitest run. Run it from `/Users/chad/Projects/nzb-utils/worktrees/main`; the shell cwd has repeatedly reset to the bare-repo root, which makes builds silently no-op.
 - **Baseline:** 526 tests passing at commit `a5381c3`.
 - Every package is at version `1.2.0`, lockstep. Do not bump anything.
 

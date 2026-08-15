@@ -7,7 +7,7 @@ An npm workspaces monorepo of Usenet tooling. Read this before writing code here
 Bare-repo + worktrees. Code lives in `worktrees/<branch>/`; there is no working tree
 at the project root. Use the `add-worktree` skill to start a branch.
 
-`CLAUDE-LOG.md` at the **project root** (`/Users/cwalker/Projects/nzb-utils/`, beside
+`CLAUDE-LOG.md` at the **project root** (`/Users/chad/Projects/nzb-utils/`, beside
 `git/` and `worktrees/`) is the transcript of the design conversation that produced
 this repo. It is deliberately outside every worktree so it cannot be committed to what
 is a public repository. Read it for the reasoning behind the decisions below; it also
